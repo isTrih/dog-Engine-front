@@ -1,5 +1,7 @@
 # dog写作引擎 （Next.js + TypeScript + Gemini）
 是一款面向网文作者与编辑团队的开源创作与阅读一体化引擎。它基于 Next.js + TypeScript 构建，前端直调 Gemini，内置在线书城解析、创作管理、AI 率检测等模块。项目强调“高可插拔、强兼容、前后端皆可跑”，即装即用，亦可按需扩展服务端能力（代理、Genkit 流程、图片解码等）。
+<img width="1905" height="908" alt="19fdfbf5d4fafb3b6e682d48bc97dabd" src="https://github.com/user-attachments/assets/35473470-d051-46cf-86b8-a46e1db148a4" />
+
 
 ### 主要特性
 - **前端直调 AI（无后端依赖）**：在浏览器使用你的 Gemini API Key 完成智能续写、改写、风格迁移和专业分析
@@ -7,8 +9,11 @@
 - **创作工具集**：章节管理、角色卡片、世界设定管理与细纲拆解（DeconstructOutline）
 - **AI 率检测**：集成检测能力，返回原始概率值，辅助质量把控
 - **可扩展能力**：服务端代理、Genkit flows、图片解码/反代等按需启用
+<img width="1757" height="916" alt="ae42e08afd6babfda72cfa99e1c7ac56" src="https://github.com/user-attachments/assets/2ca78ad2-9c9a-4ea2-bb8e-d37030ff6bd7" />
 
 ---
+<img width="1718" height="875" alt="d11524844bdc40d98ac8c55b67e3849e" src="https://github.com/user-attachments/assets/3964597b-0a21-4b65-9c62-a48b748c7ba5" />
+
 
 ## 快速开始
 
