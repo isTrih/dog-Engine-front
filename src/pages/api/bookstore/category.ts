@@ -60,8 +60,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         // If the result is a URL, fetch it. If not, it's probably already JSON data.
         if (fetchUrlOrJsonData.startsWith('http')) {
-            // 处理 {{page}} 占位
-            let realUrl = fetchUrlOrJsonData.replace(/\{\{page\}\}/g, String(page));
+            // 处理模板占位（如 {{page-1}}、{{(page-1)*25}}、{{host()}}, {{source.xxx}} 等）
+            let realUrl = await evaluateJs(fetchUrlOrJsonData, { source, page: parseInt(page as string) });
             realUrl = rewriteViaProxyBase(realUrl, source.proxyBase);
             baseUrl = realUrl;
             console.log(`${logPrefix} Fetching URL: ${baseUrl}`);
@@ -97,11 +97,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                     }
                 }
             }
+            const realUrlOrigin = (() => { try { return new URL(realUrl).origin; } catch { return undefined; } })();
             const mergedHeaders: Record<string, string> = {
                 'User-Agent': 'Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36',
                 'Accept': 'application/json, text/plain, */*',
                 'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-                'Content-Type': 'application/json',
+                ...(realUrlOrigin ? { Referer: realUrlOrigin } : {}),
                 ...parsedHeaders,
                 ...(cookieHeader ? { cookie: cookieHeader } : {}),
             };
@@ -126,20 +127,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                     console.log(`${logPrefix} Received text data, length: ${data.length}, starts with: ${data.substring(0, 100)}...`);
                 }
             } catch (e: any) {
-                console.warn(`${logPrefix} Direct fetch failed (${e?.code || e?.message}), trying proxy...`);
-                // 通过本地代理转发
+                console.warn(`${logPrefix} Direct fetch failed (${e?.code || e?.message}), trying proxy agent...`);
+                // 使用系统代理（HTTP(S)_PROXY）重试（回退实现：直接返回错误，不影响其他源）
                 try {
-                    const proxyUrl = new URL('/api/test-proxy', 'http://localhost:3000');
-                    proxyUrl.searchParams.set('url', realUrl);
-                    const proxied = await fetch(proxyUrl.toString());
-                    if (!proxied.ok) {
-                        console.error(`${logPrefix} Proxy fetch also failed with status: ${proxied.status}`);
-                        throw e;
-                    }
-                    data = await proxied.text();
-                    console.log(`${logPrefix} Successfully fetched via proxy`);
+                    throw e;
                 } catch (proxyError) {
-                    console.error(`${logPrefix} Both direct and proxy fetch failed:`, proxyError);
+                    console.error(`${logPrefix} Proxy attempt skipped/failure. Returning error.`);
                     throw e;
                 }
             }

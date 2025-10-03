@@ -2,7 +2,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -17,10 +16,11 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { deconstructOutline } from '@/ai/flows/refine-chapter-with-world-info';
-import { Edit, Loader2, WandSparkles, FileText, Send, BookUp } from 'lucide-react';
-import type { BookstoreBookDetail, BookstoreChapterContent } from '@/lib/types';
+import { Edit, Loader2, WandSparkles, Send, Users } from 'lucide-react';
+import type { BookstoreBookDetail, BookstoreChapterContent, CommunityPrompt } from '@/lib/types';
 import { ScrollArea } from './ui/scroll-area';
 import { Label } from './ui/label';
+import { Textarea } from './ui/textarea';
 import { 
     generateContent, 
     listGeminiModels, 
@@ -29,6 +29,7 @@ import {
     type GeminiModel 
 } from '@/lib/gemini-client';
 import { GeminiSettings } from './GeminiSettings';
+import { getPrompts } from '@/lib/actions/community';
 
 interface DeconstructOutlineProps {
   bookDetailUrl: string;
@@ -38,7 +39,6 @@ interface DeconstructOutlineProps {
 const DECONSTRUCT_OUTLINE_KEY = 'deconstruct-outline-result';
 
 export function DeconstructOutline({ bookDetailUrl, sourceId }: DeconstructOutlineProps) {
-  const router = useRouter();
   const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [bookDetail, setBookDetail] = useState<BookstoreBookDetail | null>(null);
@@ -47,6 +47,20 @@ export function DeconstructOutline({ bookDetailUrl, sourceId }: DeconstructOutli
   const [isFetchingChapter, setIsFetchingChapter] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [outline, setOutline] = useState<string>('');
+
+  // 用户自定义提示相关
+  const DEFAULT_PERSONA = `你是一个专业的网络小说写作分析师，擅长从完整章节中提取写作细纲。\n请提供详细、结构化的细纲，帮助作者理解章节的写作手法。`;
+  const DEFAULT_PROMPT_TEMPLATE = `请分析以下章节内容，提取出详细的写作细纲。包括：\n1. 主要情节发展\n2. 关键人物动作和对话\n3. 场景描写要点\n4. 情绪氛围营造\n5. 冲突和转折点`;
+  const [persona, setPersona] = useState<string>(() => {
+    if (typeof window === 'undefined') return DEFAULT_PERSONA;
+    return localStorage.getItem('deconstruct-persona') || DEFAULT_PERSONA;
+  });
+  const [promptTemplate, setPromptTemplate] = useState<string>(() => {
+    if (typeof window === 'undefined') return DEFAULT_PROMPT_TEMPLATE;
+    return localStorage.getItem('deconstruct-prompt-template') || DEFAULT_PROMPT_TEMPLATE;
+  });
+  const [communityPrompts, setCommunityPrompts] = useState<CommunityPrompt[]>([]);
+  const [isCommunityPromptsLoading, setIsCommunityPromptsLoading] = useState<boolean>(false);
 
   const [availableModels, setAvailableModels] = useState<GeminiModel[]>([]);
   const [isModelListLoading, setIsModelListLoading] = useState(true);
@@ -115,6 +129,17 @@ export function DeconstructOutline({ bookDetailUrl, sourceId }: DeconstructOutli
             setIsModelListLoading(false);
         }
       }
+
+      // 加载社区提示词
+      try {
+        setIsCommunityPromptsLoading(true);
+        const prompts = await getPrompts();
+        setCommunityPrompts(prompts);
+      } catch (error) {
+        console.error('Failed to load community prompts:', error);
+      } finally {
+        setIsCommunityPromptsLoading(false);
+      }
     }
     fetchInitialData();
   }, [isOpen, bookDetail, bookDetailUrl, sourceId, availableModels.length, toast]);
@@ -147,19 +172,9 @@ export function DeconstructOutline({ bookDetailUrl, sourceId }: DeconstructOutli
         const chapterContent: BookstoreChapterContent = chapterData.chapter;
         setIsFetchingChapter(false);
 
-        // 2. Send to AI - 使用前端API
-        const prompt = `请分析以下章节内容，提取出详细的写作细纲。包括：
-1. 主要情节发展
-2. 关键人物动作和对话
-3. 场景描写要点
-4. 情绪氛围营造
-5. 冲突和转折点
-
-章节内容：
-${chapterContent.content}`;
-
-        const systemInstruction = `你是一个专业的网络小说写作分析师，擅长从完整章节中提取写作细纲。
-请提供详细、结构化的细纲，帮助作者理解章节的写作手法。`;
+        // 2. Build prompt with user customizations
+        const prompt = `${promptTemplate}\n\n章节内容：\n${chapterContent.content}`;
+        const systemInstruction = persona;
 
         const result = await generateContent(
           selectedModel,
@@ -188,6 +203,28 @@ ${chapterContent.content}`;
       description: '细纲已保存，请到写作页面粘贴使用。'
     });
     setIsOpen(false);
+  }
+
+  // 保存到本地
+  const persistPersona = (text: string) => {
+    setPersona(text);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('deconstruct-persona', text);
+    }
+  };
+  const persistPromptTemplate = (text: string) => {
+    setPromptTemplate(text);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('deconstruct-prompt-template', text);
+    }
+  };
+
+  const handleCommunityPromptSelect = (promptId: string) => {
+    const selected = communityPrompts.find(p => p.id === promptId);
+    if (selected) {
+      persistPersona(selected.prompt);
+      toast({ title: '已应用社区提示词', description: `已套用：${selected.name}` });
+    }
   }
 
   return (
@@ -276,6 +313,36 @@ ${chapterContent.content}`;
             ) : (
                 <p>无法加载书籍详情。</p>
             )}
+
+            {/* 自定义提示词与社区提示词应用 */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="persona">AI 人设 / 系统指令</Label>
+                <div className="flex items-center gap-2">
+                  <Select onValueChange={handleCommunityPromptSelect} disabled={isCommunityPromptsLoading}>
+                    <SelectTrigger className="w-[150px]">
+                      <SelectValue placeholder={<div className='flex items-center gap-2'><Users className="h-4 w-4"/>社区提示词</div>} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {isCommunityPromptsLoading ? (
+                        <SelectItem value="loading" disabled>加载中...</SelectItem>
+                      ) : (
+                        communityPrompts.map(p => (
+                          <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  <Button variant="outline" size="sm" onClick={() => persistPersona(DEFAULT_PERSONA)}>重置默认</Button>
+                </div>
+                <Textarea id="persona" rows={5} value={persona} onChange={(e) => persistPersona(e.target.value)} placeholder="输入或粘贴AI人设/系统提示" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="prompt-template">分析要求（用户提示）</Label>
+                <Button variant="outline" size="sm" onClick={() => persistPromptTemplate(DEFAULT_PROMPT_TEMPLATE)}>重置默认</Button>
+                <Textarea id="prompt-template" rows={5} value={promptTemplate} onChange={(e) => persistPromptTemplate(e.target.value)} placeholder="输入分析要求，将自动拼接章节内容" />
+              </div>
+            </div>
 
             { (isFetchingChapter || isGenerating) && (
                  <div className="flex items-center justify-center h-24">

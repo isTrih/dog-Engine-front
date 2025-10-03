@@ -28,8 +28,8 @@ export function createProxyFetch() {
     return (url: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         const enhancedInit = {
             ...init,
-            // @ts-ignore - agent is valid for https requests
-            dispatcher: agent,
+            // 对于全局 undici fetch，不使用 dispatcher，保持默认直连
+            // 仅返回兼容的 fetch 包装，当前项目不强制代理
         };
         return fetch(url, enhancedInit);
     };

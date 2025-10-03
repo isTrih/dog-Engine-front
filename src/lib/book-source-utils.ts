@@ -1,3 +1,4 @@
+
 import type { BookSource } from './types';
 import { VM } from 'vm2';
 import * as cheerio from 'cheerio';
@@ -92,6 +93,16 @@ const createSandbox = (source: BookSource | undefined, key?: string, page?: numb
                         return Buffer.from(data).toString('base64');
                     }
                 };
+            },
+            // 提供 getString(rule) 以便 @js: 中快速按规则提取字符串
+            getString: (rule: string) => {
+                try {
+                    const htmlOrJson = (sandbox as any).result ?? '';
+                    const base = (sandbox as any).baseUrl || '';
+                    return parseWithRules(htmlOrJson, String(rule), base);
+                } catch (e) {
+                    return '';
+                }
             },
             // Mock Android APP methods
             toast: (msg: string) => {
@@ -287,8 +298,13 @@ function parseSingleRule(data: string | object, rule: string, baseUrl: string, i
     if (!rule) return isList ? [] : '';
 
     if (typeof data === 'object') {
-        if (rule.startsWith('$.')) {
-            const path = rule.substring(2);
+        // 支持 $.path 以及 简写 path（允许点号）两种对象取值方式
+        const normalizePath = (raw: string) => raw.startsWith('$.') ? raw.substring(2) : raw;
+        // 允许 '$.'（表示整个对象）以及 '$.path' 或 'path'
+        const isPropPath = (raw: string) => /^(?:\$\.)?[A-Za-z0-9_\.]*$/.test(raw);
+
+        if (isPropPath(rule)) {
+            const path = normalizePath(rule);
             if (path === '') return data;
             let value: any = data;
             for (const key of path.split('.')) {
@@ -328,7 +344,11 @@ function parseSingleRule(data: string | object, rule: string, baseUrl: string, i
     const regexPart = parts[1];
     
     // 处理 @ 分隔符：可能是 parent@child 或 selector@attr
-    const selectorOptions = parts[0].split('||');
+        const selectorOptions = parts[0].split('||');
+        // 兼容纯文本（没有任何 CSS 选择器符号且包含中文/英文/空格/符号）的情形，直接返回该文本
+        if (!/[#.\[@:]/.test(parts[0]) && /[\u4e00-\u9fa5A-Za-z]/.test(parts[0])) {
+            return parts[0];
+        }
 
     let finalResult: any = isList ? [] : '';
     
@@ -424,6 +444,37 @@ function parseSingleRule(data: string | object, rule: string, baseUrl: string, i
 export function parseWithRules(data: string | object, rule: string | undefined, baseUrl: string): string {
     if (!rule) return '';
 
+    // 对象数据：增强支持占位模板、'||' 备选和 '&&' 取首个非空
+    if (typeof data === 'object') {
+        const tryEvaluateTemplate = (tpl: string): string => {
+            if (!tpl.includes('{{')) return '';
+            return tpl.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_m, expr) => {
+                const value = parseSingleRule(data, String(expr).trim(), baseUrl, false);
+                return String(value ?? '');
+            });
+        };
+
+        // 如果是 URL 模板或包含占位，优先做模板替换
+        if (rule.includes('{{')) {
+            const replaced = tryEvaluateTemplate(rule);
+            if (replaced) return replaced;
+        }
+
+        // 支持多备选 'alt1||alt2'，每个备选内部按 '&&' 拆分，取第一个非空值
+        const alternatives = rule.split('||').map(s => s.trim()).filter(Boolean);
+        for (const alt of alternatives) {
+            const parts = alt.split('&&').map(s => s.trim()).filter(Boolean);
+            for (const part of parts) {
+                const val = String(parseSingleRule(data, part, baseUrl, false) || '').trim();
+                if (val) return val;
+            }
+        }
+        // 没有 '||' 的情况：保留原有 '&&' 语义为串联，但若其中某个子结果非空则返回拼接
+        const concatenated = rule.split('&&').map(subRule => String(parseSingleRule(data, subRule, baseUrl, false) || '')).join('');
+        return concatenated;
+    }
+
+    // 字符串(HTML)数据：沿用原先 '&&' 连接，'||' 在 parseSingleRule 内处理
     return rule.split('&&').map(subRule => {
         return parseSingleRule(data, subRule, baseUrl, false) as string;
     }).join('');
@@ -443,9 +494,41 @@ export function parseListWithRules(data: string, listRule: string | undefined, i
         console.log(`[parseListWithRules] 数据是HTML格式`);
     }
 
-    if (isJson && listRule.startsWith('$.')) {
-        const dataList: any[] = parseSingleRule(jsonData, listRule, baseUrl, true);
-        console.log(`[parseListWithRules] JSON解析: listRule="${listRule}" 找到 ${dataList?.length || 0} 条记录`);
+    if (isJson) {
+        // 支持 'alt1||alt2' 以及 'a&&b&&$.path' 混合写法：优先选中 JSON 路径
+        const alternatives = listRule.split('||').map(s => s.trim()).filter(Boolean);
+        let selectedPath = '';
+        for (const alt of alternatives) {
+            // 从 a&&b&&$.path 里提取最后一个以 $. 开头的片段
+            const parts = alt.split('&&').map(p => p.trim()).filter(Boolean);
+            const lastJson = [...parts].reverse().find(p => p.startsWith('$.'));
+            if (lastJson) {
+                selectedPath = lastJson;
+                break;
+            }
+            // 若整个 alt 本身就是 $.path
+            if (alt.startsWith('$.')) {
+                selectedPath = alt;
+                break;
+            }
+        }
+        // 回退：如果没有任何 $. 路径，且 listRule 本身就是 $. 开头则使用它
+        if (!selectedPath && listRule.startsWith('$.')) {
+            selectedPath = listRule;
+        }
+
+        if (!selectedPath) {
+            // 兼容 '$.' 作为整个对象（数组）
+            if (listRule.trim() === '$.' && Array.isArray(jsonData)) {
+                selectedPath = '$.';
+            } else {
+                console.log(`[parseListWithRules] ⚠️ 未找到可用的 JSON 路径，返回空列表。listRule=${listRule}`);
+                return [];
+            }
+        }
+
+        const dataList: any[] = selectedPath === '$.' ? jsonData : parseSingleRule(jsonData, selectedPath, baseUrl, true);
+        console.log(`[parseListWithRules] JSON解析: selectedPath="${selectedPath}" 找到 ${dataList?.length || 0} 条记录`);
         
         if(!Array.isArray(dataList)) {
             console.log(`[parseListWithRules] ⚠️ 解析结果不是数组:`, typeof dataList);

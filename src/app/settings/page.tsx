@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useRef, ChangeEvent, useEffect } from 'react';
+export const dynamic = 'force-dynamic';
+
+import { useState, useRef, ChangeEvent, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Header from '@/components/Header';
 import { generateUUID } from '@/lib/utils';
@@ -237,7 +239,7 @@ function BookSourceForm({ onSave, source, onCancel }: { onSave: (source: BookSou
   );
 }
 
-export default function SettingsPage() {
+function SettingsPageInner() {
   const [sources, setSources] = useState<BookSource[]>([]);
   const [editingSource, setEditingSource] = useState<BookSource | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -652,5 +654,13 @@ export default function SettingsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center">Loading...</div>}>
+      <SettingsPageInner />
+    </Suspense>
   );
 }

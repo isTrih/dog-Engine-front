@@ -5,7 +5,7 @@ import { decodeCoverIfNeeded } from '@/lib/book-source-utils';
 import { getCookieForUrl } from '@/lib/book-source-auth';
 import { rewriteViaProxyBase } from '@/lib/proxy-fetch';
 import * as cheerio from 'cheerio';
-import { getBookSources, parseWithRules, parseListWithRules, evaluateJs, parseRuleWithCssJs } from '@/lib/book-source-utils';
+import { getBookSources, parseWithRules, parseListWithRules, evaluateJs, parseRuleWithCssJs, runJsTransformer } from '@/lib/book-source-utils';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     const { url, sourceId } = req.query;
@@ -110,7 +110,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             tocUrlToEvaluate = await evaluateJs(tocUrlRaw, { source, result: initResult, key: url });
         }
         
-        const evaluatedTocUrl = tocUrlToEvaluate;
+        // 解析 @get:{path} 占位（从 initResult 对象取值）
+        const resolveGetPlaceholder = (input: string): string => {
+            if (!input || typeof input !== 'string') return input;
+            return input.replace(/@get:\{([^}]+)\}/g, (_m, path) => {
+                try {
+                    const parts = String(path).split('.');
+                    let v: any = initResult;
+                    for (const p of parts) {
+                        if (v && typeof v === 'object' && p in v) v = v[p]; else { v = undefined; break; }
+                    }
+                    return v != null ? String(v) : '';
+                } catch { return ''; }
+            });
+        };
+        const evaluatedTocUrl = resolveGetPlaceholder(tocUrlToEvaluate);
         console.log(`${logPrefix} Final ToC URL: ${evaluatedTocUrl}`);
         
         let tocHtml = html;
@@ -138,16 +152,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             
             tocResponseUrl = finalTocUrl;
             console.log(`${logPrefix} Fetching ToC from URL: ${finalTocUrl}`);
-            const tocCookie = await getCookieForUrl(source.id, finalTocUrl);
-            const tocMergedHeaders: Record<string, string> = {
-                ...(tocRequestOptions.headers as any),
-                ...(tocCookie ? { cookie: tocCookie } : {}),
-            };
-            const tocResponse = await fetch(rewriteViaProxyBase(finalTocUrl, source.proxyBase), { ...tocRequestOptions, headers: tocMergedHeaders });
-            console.log(`${logPrefix} Fetched ToC with status: ${tocResponse.status}`);
-             if(tocResponse.ok) {
-                tocHtml = await tocResponse.text();
-             }
+            try {
+                const tocCookie = await getCookieForUrl(source.id, finalTocUrl);
+                const tocMergedHeaders: Record<string, string> = {
+                    ...(tocRequestOptions.headers as any),
+                    ...(tocCookie ? { cookie: tocCookie } : {}),
+                };
+                const tocResponse = await fetch(rewriteViaProxyBase(finalTocUrl, source.proxyBase), { ...tocRequestOptions, headers: tocMergedHeaders });
+                console.log(`${logPrefix} Fetched ToC with status: ${tocResponse.status}`);
+                if (tocResponse.ok) {
+                    tocHtml = await tocResponse.text();
+                }
+            } catch (e) {
+                console.warn(`${logPrefix} ToC fetch failed, continue without ToC:`, (e as any)?.message || e);
+            }
         }
         
         let tocResult: any;
@@ -230,7 +248,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         console.log(`${logPrefix} Found ${chapters.length} chapters.`);
         
-        const bookDataContainer = bookInfoRule.init?.startsWith('$.') ? initResult : html;
+        // 优先使用已解析到的 JSON 数据作为容器（如番茄等接口直接返回JSON），否则回退到HTML
+        const bookDataContainer = (initResult && typeof initResult === 'object') ? initResult : (bookInfoRule.init?.startsWith('$.') ? initResult : html);
 
         // 生成并清洗简介（支持HTML，去掉危险标签与属性）
         const rawDescription = bookInfoRule.intro?.startsWith('<js>') 
@@ -289,15 +308,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             } catch {}
         }
 
+        // 通用字段解析，支持 '@js:' 后处理
+        const parseField = async (rule?: string): Promise<string> => {
+            if (!rule) return '';
+            if (rule.startsWith('<js>')) {
+                try { return await evaluateJs(rule, { source, result: bookDataContainer }); } catch { return ''; }
+            }
+            const jsIndex = rule.indexOf('@js:');
+            if (jsIndex > -1) {
+                const selectorPart = rule.substring(0, jsIndex).trim();
+                const jsSnippet = rule.substring(jsIndex + 4);
+                const baseValue = selectorPart ? parseWithRules(bookDataContainer, selectorPart, detailUrl) : '';
+                try {
+                    return await runJsTransformer(jsSnippet, { source, result: baseValue });
+                } catch {
+                    return String(baseValue || '');
+                }
+            }
+            return parseWithRules(bookDataContainer, rule, detailUrl);
+        };
+
+        const resolvedAuthor = await parseField(bookInfoRule.author);
+        const resolvedCover = await decodeCoverIfNeeded(await parseField(bookInfoRule.coverUrl), source) || await parseField(bookInfoRule.coverUrl);
+        const resolvedKind = await parseField(bookInfoRule.kind);
+        const resolvedLastChapter = await parseField(bookInfoRule.lastChapter);
+
         const bookDetail: BookstoreBookDetail = {
             title: parsedTitle || '',
-            author: parseWithRules(bookDataContainer, bookInfoRule.author, detailUrl),
-            cover: (await decodeCoverIfNeeded(parseWithRules(bookDataContainer, bookInfoRule.coverUrl, detailUrl), source)) || parseWithRules(bookDataContainer, bookInfoRule.coverUrl, detailUrl),
+            author: resolvedAuthor,
+            cover: resolvedCover,
             description: sanitizeIntroHtml(rawDescription),
-            category: parseWithRules(bookDataContainer, bookInfoRule.kind, detailUrl),
-            latestChapter: parseWithRules(bookDataContainer, bookInfoRule.lastChapter, detailUrl),
+            category: resolvedKind,
+            latestChapter: resolvedLastChapter,
             detailUrl: detailUrl,
-            chapters: chapters,
+            // 对于无目录源（如番茄等），允许 chapters 为空数组
+            chapters: chapters || [],
         };
         
         console.log(`${logPrefix} Successfully parsed book detail: ${bookDetail.title}`);
