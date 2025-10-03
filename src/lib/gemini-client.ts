@@ -68,6 +68,28 @@ function getGeminiRetries(): number {
     return Number.isFinite(n) && n >= 0 && n <= 3 ? n : 1;
 }
 
+// 用户可控的安全阈值：localStorage 设置 'gemini-safety' 为 'off' 以完全关闭
+function getSafetyMode(): 'off' | 'default' {
+    if (typeof window === 'undefined') return 'default';
+    const v = (localStorage.getItem('gemini-safety') || '').toLowerCase();
+    return v === 'off' ? 'off' : 'default';
+}
+
+function buildSafetySettings(): GeminiGenerateRequest['safetySettings'] {
+    const mode = getSafetyMode();
+    // 五类过滤器全部设为 BLOCK_NONE（含 Civic Integrity）
+    const BLOCK_NONE = 'BLOCK_NONE';
+    const DEFAULT = 'BLOCK_NONE'; // 保持宽松，若想用官方默认，改为 'HARM_BLOCK_THRESHOLD_UNSPECIFIED'
+    const threshold = mode === 'off' ? BLOCK_NONE : DEFAULT;
+    return [
+        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold },
+        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold },
+        { category: 'HARM_CATEGORY_HARASSMENT', threshold },
+        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold },
+        { category: 'HARM_CATEGORY_CIVIC_INTEGRITY', threshold },
+    ];
+}
+
 /**
  * 从localStorage获取API密钥
  */
@@ -134,9 +156,9 @@ export async function listGeminiModels(apiKey?: string): Promise<GeminiModel[]> 
         console.error('Failed to fetch models:', error);
         // 返回默认模型列表作为fallback
         return [
-            { id: 'gemini-2.5-flash', name: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash' },
+            { id: 'ggemini-2.5-flash-lite', name: 'gemini-2.5-flash-lite', displayName: 'gemini-2.5-flash-lite' },
             { id: 'gemini-2.5-pro', name: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro' },
-            { id: 'gemini-1.5-flash', name: 'gemini-1.5-flash', displayName: 'Gemini 1.5 Flash' },
+            { id: 'gemini-2.5-flash', name: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash' },
             { id: 'gemini-1.5-pro', name: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro' },
         ];
     }
@@ -182,12 +204,7 @@ export async function generateContent(
             temperature: options?.temperature ?? 0.7,
             maxOutputTokens: options?.maxOutputTokens ?? 2048,
         },
-        safetySettings: [
-            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-        ],
+        safetySettings: buildSafetySettings(),
     };
 
     try {
@@ -375,7 +392,7 @@ export async function testApiKey(apiKey: string): Promise<{ valid: boolean; erro
  * 默认推荐的模型配置
  */
 export const DEFAULT_MODELS = {
-    FAST: 'gemini-2.5-flash',
+    FAST: 'gemini-2.5-flash-lite',
     POWERFUL: 'gemini-2.5-pro',
 } as const;
 
