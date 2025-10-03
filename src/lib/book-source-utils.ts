@@ -80,7 +80,19 @@ const createSandbox = (source: BookSource | undefined, key?: string, page?: numb
             get: (key: string) => variableMap[key],
             put: (key: string, value: any) => { variableMap[key] = value; },
             base64Encode: (str: string) => Buffer.from(str).toString('base64'),
+            base64Decode: (str: string) => Buffer.from(str, 'base64').toString('utf-8'),
             hexDecodeToString: (hex: string) => Buffer.from(hex, 'hex').toString('utf-8'),
+            createSymmetricCrypto: (algorithm: string, key: string, iv: string) => {
+                // Mock crypto functions for DES encryption used in 晋江 book source
+                console.log(`[Mock] java.createSymmetricCrypto: ${algorithm}`);
+                return {
+                    encryptBase64: (data: string) => {
+                        // Mock encryption - just return base64 encoded data
+                        console.log(`[Mock] crypto.encryptBase64: ${data.substring(0, 20)}...`);
+                        return Buffer.from(data).toString('base64');
+                    }
+                };
+            },
             // Mock Android APP methods
             toast: (msg: string) => {
                 console.log(`[Mock] java.toast: ${msg}`);
@@ -129,6 +141,10 @@ const createSandbox = (source: BookSource | undefined, key?: string, page?: numb
             getLoginInfoMap: () => {
                 console.log(`[Mock] source.getLoginInfoMap`);
                 return {};
+            },
+            getLoginHeaderMap: () => {
+                console.log(`[Mock] source.getLoginHeaderMap`);
+                return { get: (key: string) => variableMap[key] || '' };
             }
         },
         key: key || '',
@@ -158,6 +174,27 @@ const createSandbox = (source: BookSource | undefined, key?: string, page?: numb
             
             return key ? finalArgs[key] : finalArgs;
         },
+        // 添加 Map 函数用于获取配置参数
+        Map: (key: string) => {
+            // 从变量映射中获取值，或者从getArguments获取
+            const value = variableMap[key];
+            if (value !== undefined) {
+                return value;
+            }
+            
+            // 尝试从 getArguments 获取
+            try {
+                const args = JSON.parse(variableMap._open_argument || '{}');
+                return args[key] || '';
+            } catch (e) {
+                return '';
+            }
+        },
+        // 添加 Date 对象和其他全局变量
+        Date,
+        String,
+        Number,
+        JSON,
     };
     
     if(source?.jsLib) {

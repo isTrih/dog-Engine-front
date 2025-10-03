@@ -46,6 +46,29 @@ export interface GeminiGenerateResponse {
 }
 
 /**
+ * 是否开启Gemini调试日志（localStorage: 'gemini-debug'）
+ */
+function isGeminiDebugEnabled(): boolean {
+    if (typeof window === 'undefined') return false;
+    const v = localStorage.getItem('gemini-debug');
+    return v === '1' || v === 'true' || v === 'on';
+}
+
+function getGeminiTimeoutMs(): number {
+    if (typeof window === 'undefined') return 30000;
+    const raw = localStorage.getItem('gemini-timeout-ms');
+    const n = raw ? parseInt(raw, 10) : 30000;
+    return Number.isFinite(n) && n >= 5000 ? n : 30000;
+}
+
+function getGeminiRetries(): number {
+    if (typeof window === 'undefined') return 1;
+    const raw = localStorage.getItem('gemini-retries');
+    const n = raw ? parseInt(raw, 10) : 1;
+    return Number.isFinite(n) && n >= 0 && n <= 3 ? n : 1;
+}
+
+/**
  * 从localStorage获取API密钥
  */
 export function getApiKey(): string | null {
@@ -168,35 +191,155 @@ export async function generateContent(
     };
 
     try {
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${key}`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(requestBody),
+        if (isGeminiDebugEnabled()) {
+            try {
+                const payloadPreview = messages
+                    .map(m => `[${m.role}] ` + (m.parts || []).map(p => p?.text || '').join(''))
+                    .join('\n');
+                // 打印完整提示文本（用于排查 <br>、标签残留等问题）
+                console.debug('[Gemini][request]', {
+                    modelId,
+                    temperature: requestBody.generationConfig?.temperature,
+                    maxOutputTokens: requestBody.generationConfig?.maxOutputTokens,
+                    messageCount: messages.length,
+                    payload: payloadPreview,
+                });
+            } catch {
+                // ignore
             }
-        );
+        }
 
-        if (!response.ok) {
-            const errorText = await response.text();
+        const timeoutMs = getGeminiTimeoutMs();
+        const retries = getGeminiRetries();
+        let response: Response | null = null;
+        let lastError: any = null;
+
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            try {
+                if (isGeminiDebugEnabled() && retries > 0) {
+                    console.debug('[Gemini][attempt]', { attempt: attempt + 1, retries: retries + 1, timeoutMs });
+                }
+                response = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${key}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(requestBody),
+                        // @ts-ignore - AbortSignal.timeout supported in modern browsers
+                        signal: (AbortSignal as any)?.timeout?.(timeoutMs),
+                    }
+                );
+                break; // success
+            } catch (e: any) {
+                lastError = e;
+                const msg = String(e?.message || e);
+                const isTimeout = msg.includes('timed out') || msg.includes('Timeout') || msg.includes('AbortError');
+                const isNetwork = msg.includes('Failed to fetch') || msg.includes('Network') || e?.name === 'TypeError';
+                if (attempt < retries && (isTimeout || isNetwork)) {
+                    continue; // retry
+                }
+                throw e;
+            }
+        }
+        // non-null assertion after loop
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const nonNullResponse = response!;
+
+        if (!nonNullResponse.ok) {
+            const errorText = await nonNullResponse.text();
             console.error('Gemini API error:', errorText);
-            throw new Error(`API调用失败: ${response.status}`);
+            // Debug模式：抛出原始响应文本，便于定位问题
+            if (isGeminiDebugEnabled()) {
+                throw new Error(`[RAW ${nonNullResponse.status}] ${errorText}`);
+            }
+            // 解析常见错误，给出更友好的提示
+            try {
+                const err = JSON.parse(errorText);
+                const code = err?.error?.status || String(nonNullResponse.status);
+                const reason = Array.isArray(err?.error?.details)
+                    ? (err.error.details.find((d: any) => d?.reason)?.reason || '')
+                    : '';
+                const message = err?.error?.message || 'API调用失败';
+                if (reason === 'API_KEY_INVALID' || code === 'INVALID_ARGUMENT') {
+                    throw new Error('API密钥无效，请在右上角「AI设置」中重新配置并点击“测试连接”。');
+                }
+                if (code === 'PERMISSION_DENIED') {
+                    throw new Error('没有权限访问该API，请确认使用的是 Google AI Studio 的密钥，且已开通 Generative Language API。');
+                }
+                if (code === 'RESOURCE_EXHAUSTED') {
+                    throw new Error('已达到配额或速率限制，请稍后重试或更换模型/账号。');
+                }
+                if (code === 'NOT_FOUND' || message.includes('model')) {
+                    throw new Error('模型不可用或名称不正确，请更换为可用模型（例如 gemini-2.5-flash）。');
+                }
+                throw new Error(`${message}`);
+            } catch (_) {
+                throw new Error(`API调用失败: ${nonNullResponse.status}`);
+            }
         }
 
-        const data: GeminiGenerateResponse = await response.json();
-        
-        if (!data.candidates || data.candidates.length === 0) {
-            throw new Error('API未返回有效内容');
+        if (isGeminiDebugEnabled()) {
+            try {
+                const raw = await nonNullResponse.clone().text();
+                console.debug('[Gemini][rawResponse]', raw.length > 5000 ? raw.slice(0, 5000) + '...<truncated>' : raw);
+            } catch {
+                // ignore
+            }
         }
 
-        const text = data.candidates[0].content.parts
-            .map(part => part.text)
-            .join('');
+        const data: any = await nonNullResponse.json();
 
-        return text;
+        // 处理安全拦截与空候选
+        const promptFeedback = data?.promptFeedback;
+        if (promptFeedback?.blockReason) {
+            throw new Error(`内容被安全策略拦截（${promptFeedback.blockReason}）。请调整提示词或降低敏感内容。`);
+        }
+
+        const candidates = Array.isArray(data?.candidates) ? data.candidates : [];
+        if (candidates.length === 0) {
+            throw new Error('模型未返回内容，请稍后重试或更换模型。');
+        }
+
+        // 优先取第一个候选的 parts 文本；若不存在则汇总所有候选的文本
+        const firstParts = candidates?.[0]?.content?.parts;
+        let partsTexts: string[] = [];
+        if (Array.isArray(firstParts)) {
+            partsTexts = firstParts.map((p: any) => p?.text || '').filter(Boolean);
+        } else {
+            partsTexts = candidates
+                .flatMap((c: any) => Array.isArray(c?.content?.parts) ? c.content.parts : [])
+                .map((p: any) => p?.text || '')
+                .filter(Boolean);
+        }
+
+        if (partsTexts.length === 0) {
+            const finishReason = candidates?.[0]?.finishReason || 'UNKNOWN';
+            if (isGeminiDebugEnabled()) {
+                console.debug('[Gemini][finish]', {
+                    finishReason,
+                    usage: data?.usageMetadata,
+                    candidatesCount: candidates.length,
+                });
+            }
+            throw new Error(`模型未返回可读文本（finishReason=${finishReason}）。请稍后重试或更换为 gemini-2.5-flash。`);
+        }
+
+        const output = partsTexts.join('');
+        if (isGeminiDebugEnabled()) {
+            console.debug('[Gemini][text]', output.length > 2000 ? output.slice(0, 2000) + '...<truncated>' : output);
+        }
+        return output;
     } catch (error: any) {
+        const msg = String(error?.message || error);
+        // Debug模式：不改写错误，直接抛出原始错误信息
+        if (isGeminiDebugEnabled()) {
+            console.error('Failed to generate content (raw):', error);
+            throw error;
+        }
+        // 追加上下文过长的友好提示（非调试模式）
+        if (msg.includes('MAX_TOKENS') || msg.includes('maximum context') || msg.includes('content too long')) {
+            throw new Error('模型未能返回内容：提示或输入过长（达到了上下文/输出上限）。请缩短输入、降低输出tokens，或改用更小的提示分批处理。');
+        }
         console.error('Failed to generate content:', error);
         throw error;
     }

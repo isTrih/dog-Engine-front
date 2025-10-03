@@ -35,7 +35,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
 
         let chapterUrl = url;
-        let requestOptions: RequestInit = { headers: source.header ? JSON.parse(source.header) : undefined };
+        let requestHeaders: Record<string, string> = {};
+        if (source.header) {
+            try {
+                requestHeaders = JSON.parse(source.header);
+            } catch (e) {
+                console.warn(`${logPrefix} Failed to parse source.header as JSON, checking for JS code...`);
+                if (source.header.trim().startsWith('<js>') && source.header.trim().endsWith('</js>')) {
+                    try {
+                        const headerResult = await evaluateJs(source.header, { source });
+                        requestHeaders = JSON.parse(headerResult);
+                    } catch (jsError) {
+                        console.error(`${logPrefix} Failed to evaluate header JS:`, jsError);
+                        requestHeaders = {};
+                    }
+                }
+            }
+        }
+        let requestOptions: RequestInit = { headers: requestHeaders };
         let jsContextResult: any = {};
         
         if (url.startsWith('data:')) {
@@ -125,26 +142,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const replaceRegex = contentRule.replaceRegex;
         if (replaceRegex && replaceRegex.startsWith('@js:')) {
             try {
-                await evaluateJs('<js>' + replaceRegex.substring(4) + '</js>', { source, result: content });
+                const replaced = await evaluateJs('<js>' + replaceRegex.substring(4) + '</js>', { source, result: content });
+                if (typeof replaced === 'string' && replaced.length > 0) {
+                    content = replaced;
+                }
             } catch (e) {
                 // ignore
             }
+        } else if (replaceRegex) {
+            try {
+                const reg = new RegExp(replaceRegex, 'g');
+                content = content.replace(reg, '');
+            } catch {}
         } else {
-            content = content
-                .replace(/<br\s*\/?>/gi, '\n')
-                .replace(/&nbsp;/g, ' ')
-                .replace(/<p>/gi, '')
-                .replace(/<\/p>/gi, '\n\n')
-                .split('\n')
-                .map(line => line.trim())
-                .filter(line => line)
-                .join('\n\n');
-            if (sourceRegex) {
-                try {
-                    const reg = new RegExp(sourceRegex, 'g');
-                    content = content.replace(reg, '');
-                } catch {}
-            }
+            // no replaceRegex
+        }
+
+        // 统一规范化：换行、空白、去标签
+        content = content
+            .replace(/&nbsp;/gi, ' ')
+            .replace(/<br\s*\/?\s*>/gi, '\n')
+            .replace(/<p\b[^>]*>/gi, '')
+            .replace(/<\/p>/gi, '\n\n')
+            .replace(/<[^>]+>/g, '')
+            .split('\n')
+            .map(line => line.replace(/\s+/g, ' ').trim())
+            .filter(line => line.length > 0)
+            .join('\n\n');
+
+        if (sourceRegex) {
+            try {
+                const reg = new RegExp(sourceRegex, 'g');
+                content = content.replace(reg, '');
+            } catch {}
         }
         
         console.log(`${logPrefix} Successfully parsed content.`);

@@ -151,7 +151,7 @@ function BookDetail() {
                 <div className="grid md:grid-cols-4 gap-8">
                     <div className="md:col-span-1">
                         <Image
-                          src={book.cover || `https://placehold.co/300x400.png`}
+                          src={book.cover ? `/api/proxy-image?url=${encodeURIComponent(book.cover)}` : `https://placehold.co/300x400.png`}
                           alt={book.title}
                           width={300}
                           height={400}

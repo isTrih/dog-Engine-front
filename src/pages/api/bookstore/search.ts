@@ -72,9 +72,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         
         // merge cookie header if stored for this source
         const cookieHeader = await getCookieForUrl(source.id, searchUrl);
-        const baseHeaders: Record<string, string> = (() => {
-            try { return source.header ? JSON.parse(source.header) : {}; } catch { return {}; }
-        })();
+        const baseHeaders: Record<string, string> = (await (async () => {
+            if (!source.header) return {} as Record<string, string>;
+            try {
+                return JSON.parse(source.header);
+            } catch (e) {
+                console.warn(`${logPrefix} Failed to parse source.header as JSON, checking for JS code...`);
+                if (source.header.trim().startsWith('<js>') && source.header.trim().endsWith('</js>')) {
+                    try {
+                        const headerResult = await evaluateJs(source.header, { source });
+                        return JSON.parse(headerResult as any);
+                    } catch (jsError) {
+                        console.error(`${logPrefix} Failed to evaluate header JS:`, jsError);
+                        return {} as Record<string, string>;
+                    }
+                }
+                return {} as Record<string, string>;
+            }
+        })());
         const mergedHeaders: Record<string, string> = {
             ...baseHeaders,
             ...(cookieHeader ? { cookie: cookieHeader } : {}),
@@ -86,11 +101,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             console.warn(`${logPrefix} Direct fetch failed (${e?.code || e?.message}), trying proxy...`);
             // 若外网直连被阻断，尝试通过我们已有的 /api/test-proxy 代理中转（若已配置）
             try {
-                const proxied = await fetch(`/api/test-proxy?url=${encodeURIComponent(searchUrl)}`);
-                if (!proxied.ok) throw new Error('proxy failed');
+                const proxyUrl = new URL('/api/test-proxy', 'http://localhost:3000');
+                proxyUrl.searchParams.set('url', searchUrl);
+                const proxied = await fetch(proxyUrl.toString());
+                if (!proxied.ok) {
+                    console.error(`${logPrefix} Proxy fetch also failed with status: ${proxied.status}`);
+                    throw new Error('proxy failed');
+                }
                 const text = await proxied.text();
                 response = new Response(text, { status: 200 });
-            } catch {
+                console.log(`${logPrefix} Successfully fetched via proxy`);
+            } catch (proxyError) {
+                console.error(`${logPrefix} Both direct and proxy fetch failed:`, proxyError);
                 throw e; // 保留原始错误
             }
         }

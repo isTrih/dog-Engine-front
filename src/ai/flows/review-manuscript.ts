@@ -13,6 +13,7 @@ import { z } from 'genkit';
 
 const ReviewManuscriptInputSchema = z.object({
   manuscript: z.string().max(10000).describe('The manuscript content to be reviewed, with a maximum of 10,000 characters.'),
+  modelId: z.string().optional().describe('Optional model ID to use when reviewing.'),
 });
 export type ReviewManuscriptInput = z.infer<typeof ReviewManuscriptInputSchema>;
 
@@ -55,10 +56,13 @@ const reviewManuscriptFlow = ai.defineFlow(
     outputSchema: ReviewManuscriptOutputSchema,
   },
   async (input) => {
-    const { output } = await reviewPrompt(input, {
-        model: 'googleai/gemini-2.5-flash',
+    const model = input.modelId && input.modelId.trim().length > 0
+      ? `googleai/${input.modelId}`
+      : 'googleai/gemini-2.5-flash';
+    const { output } = await reviewPrompt({ manuscript: input.manuscript }, {
+        model,
         config: {
-            temperature: 0.2, // Lower temperature for more deterministic and focused reviews
+            temperature: 0.2,
         }
     });
     return output!;

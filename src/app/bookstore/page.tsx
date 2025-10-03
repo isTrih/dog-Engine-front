@@ -262,7 +262,7 @@ export default function BookstorePage() {
                                     <h2 className="text-2xl font-bold font-headline">分类导航</h2>
                                 </div>
                                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-8 gap-3">
-                                    {categories.map((cat, index) => <CategoryLinkCard key={cat.url ? `${cat.url}-${cat.sourceId}` : `cat-${cat.sourceId}-${index}`} category={cat} />)}
+                                    {categories.map((cat, index) => <CategoryLinkCard key={`${cat.sourceId}-${index}-${cat.title}-${cat.url || 'no-url'}`} category={cat} />)}
                                 </div>
                                 </>
                              )}

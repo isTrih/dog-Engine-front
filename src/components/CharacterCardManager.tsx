@@ -1,6 +1,6 @@
 'use client';
 
-import type { Character } from '@/lib/types';
+import type { Character, Chapter } from '@/lib/types';
 import { useState } from 'react';
 import { generateUUID } from '@/lib/utils';
 import { Button } from './ui/button';
@@ -30,14 +30,21 @@ import { ScrollArea } from './ui/scroll-area';
 interface CharacterCardManagerProps {
   characters: Character[];
   setCharacters: (characters: Character[]) => void;
+  chapters?: Chapter[];
 }
 
-export default function CharacterCardManager({ characters, setCharacters }: CharacterCardManagerProps) {
+export default function CharacterCardManager({ characters, setCharacters, chapters = [] }: CharacterCardManagerProps) {
   const [isNewItemDialogOpen, setIsNewItemDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Character | null>(null);
   
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [isAiDialogOpen, setIsAiDialogOpen] = useState(false);
+  const [selectedChapterIds, setSelectedChapterIds] = useState<string[]>([]);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [debugViewOnly, setDebugViewOnly] = useState(false);
+  const [noLengthLimit, setNoLengthLimit] = useState(false);
+  const [rawOutput, setRawOutput] = useState<string>('');
 
   const resetForm = () => {
     setName('');
@@ -83,6 +90,107 @@ export default function CharacterCardManager({ characters, setCharacters }: Char
     );
   };
 
+  const toggleChapterSelection = (chapterId: string) => {
+    setSelectedChapterIds(prev => prev.includes(chapterId) ? prev.filter(id => id !== chapterId) : [...prev, chapterId]);
+  };
+
+  const handleAiExtract = async () => {
+    if (selectedChapterIds.length === 0) return;
+    setIsExtracting(true);
+    try {
+      const selected = chapters.filter(ch => selectedChapterIds.includes(ch.id));
+      const joinedRaw = selected.map(ch => `【${ch.title}】\n${ch.content || ''}`).join('\n\n');
+      let joined = joinedRaw;
+      if (!noLengthLimit) {
+        // 压缩与限长（调试可关闭）
+        const compact = joinedRaw
+          .replace(/\u00A0/g, ' ')
+          .replace(/[\t ]{2,}/g, ' ')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+        const LIMIT = (() => {
+          if (typeof window === 'undefined') return 12000;
+          const val = parseInt(localStorage.getItem('ai-extract-char-limit') || '12000', 10);
+          return Number.isFinite(val) && val > 2000 ? val : 12000;
+        })();
+        joined = compact.length > LIMIT ? compact.slice(0, LIMIT) : compact;
+      }
+      const system = '你是资深的小说设定分析师。基于给定正文，抽取“角色卡”。每个角色包含：name（不超过10字），description（150-300字，包含身份、性格、动机与与主角关系）。以JSON数组返回，每项为{"name":"...","description":"..."}，不要输出其他内容。';
+      const { getDefaultModel, generateContent } = await import('@/lib/gemini-client');
+      const model = getDefaultModel();
+      const opts = { systemInstruction: system, maxOutputTokens: 2048 } as const;
+      if (debugViewOnly) {
+        setRawOutput(`>>> INPUT LENGTH: ${joined.length}\n>>> SYSTEM LENGTH: ${system.length}\n>>> OPTIONS: ${JSON.stringify(opts)}\n\n`);
+      }
+      const output = await generateContent(model, joined, opts);
+
+      const isDebug = () => {
+        if (typeof window === 'undefined') return false;
+        const v = localStorage.getItem('gemini-debug');
+        return v === '1' || v === 'true' || v === 'on';
+      };
+      if (isDebug()) {
+        // 打印模型原始输出，帮助定位解析问题
+        // eslint-disable-next-line no-console
+        console.debug('[AI Extract][raw]', output);
+      }
+
+      const tryParseArray = (text: string): Array<{ name: string; description: string }> => {
+        // 1) 直接解析
+        try { return JSON.parse(text.trim()); } catch {}
+        // 2) 去掉三引号代码块（``` 或 ```json）
+        try {
+          const stripped = text
+            .replace(/^```[a-zA-Z]*\s*/m, '')
+            .replace(/```\s*$/m, '')
+            .trim();
+          return JSON.parse(stripped);
+        } catch {}
+        // 3) 提取第一个JSON数组
+        try {
+          const start = text.indexOf('[');
+          const end = text.lastIndexOf(']');
+          if (start !== -1 && end !== -1 && end > start) {
+            const sub = text.substring(start, end + 1);
+            return JSON.parse(sub);
+          }
+        } catch {}
+        // 4) 提取对象并包裹成数组
+        try {
+          const s = text.indexOf('{');
+          const e = text.lastIndexOf('}');
+          if (s !== -1 && e !== -1 && e > s) {
+            const obj = JSON.parse(text.substring(s, e + 1));
+            if (obj && (obj.name || obj.description)) return [obj];
+          }
+        } catch {}
+        return [];
+      };
+
+      if (debugViewOnly) {
+        setRawOutput(output);
+        return;
+      }
+
+      const parsed = tryParseArray(output);
+      const newCards: Character[] = (parsed || []).map((c) => ({ id: generateUUID(), name: String(c.name || '').slice(0, 20), description: String(c.description || ''), enabled: true }));
+      if (newCards.length > 0) {
+        setCharacters([...characters, ...newCards]);
+        setIsAiDialogOpen(false);
+        setSelectedChapterIds([]);
+      }
+    } catch (e: any) {
+      console.error('AI 解析角色失败:', e);
+      if (debugViewOnly) {
+        const msg = String(e?.message || e || '');
+        setRawOutput(prev => `${prev || ''}\n[ERROR]\n${msg}`);
+        return;
+      }
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="p-1">
@@ -121,6 +229,54 @@ export default function CharacterCardManager({ characters, setCharacters }: Char
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {chapters.length > 0 && (
+          <Dialog open={isAiDialogOpen} onOpenChange={setIsAiDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="w-full mt-2">AI 自动获取</Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>选择章节并通过 AI 自动提取角色</DialogTitle>
+                <DialogDescription>勾选章节后，我们会把正文发送给 AI，自动生成角色卡。</DialogDescription>
+              </DialogHeader>
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <label className="flex items-center gap-1">
+                <input type="checkbox" checked={noLengthLimit} onChange={(e) => setNoLengthLimit(e.target.checked)} />
+                不做长度限制（调试）
+              </label>
+              <label className="flex items-center gap-1">
+                <input type="checkbox" checked={debugViewOnly} onChange={(e) => setDebugViewOnly(e.target.checked)} />
+                仅查看原始输出（不入库）
+              </label>
+            </div>
+              <div className="max-h-80 overflow-y-auto border rounded p-2 space-y-2">
+                {chapters.map((ch) => (
+                  <label key={ch.id} className="flex items-start gap-2">
+                    <input type="checkbox" className="mt-1" checked={selectedChapterIds.includes(ch.id)} onChange={() => toggleChapterSelection(ch.id)} />
+                    <div>
+                      <div className='font-medium'>{ch.title}</div>
+                      <div className='text-xs text-muted-foreground line-clamp-2'>{ch.content?.slice(0, 120) || ''}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            {debugViewOnly && rawOutput && (
+              <div className="mt-2">
+                <Label>模型原始输出（仅调试显示）</Label>
+                <div className="p-2 border rounded bg-muted/30 text-xs whitespace-pre-wrap break-words max-h-60 overflow-auto">
+                  {rawOutput}
+                </div>
+              </div>
+            )}
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="secondary">取消</Button>
+                </DialogClose>
+                <Button onClick={handleAiExtract} disabled={isExtracting || selectedChapterIds.length === 0}>{isExtracting ? '正在提取...' : '开始提取'}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       <ScrollArea className="flex-grow my-4">

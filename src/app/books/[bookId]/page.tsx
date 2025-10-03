@@ -136,7 +136,11 @@ export default function BookPage() {
               <SheetHeader>
                 <SheetTitle className='font-headline'>角色卡片</SheetTitle>
               </SheetHeader>
-              <CharacterCardManager characters={characters} setCharacters={setCharacters} />
+              <CharacterCardManager 
+                characters={characters} 
+                setCharacters={setCharacters} 
+                chapters={currentBook.chapters}
+              />
             </SheetContent>
           </Sheet>
       </Header>

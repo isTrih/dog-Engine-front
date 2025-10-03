@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Logo from './Logo';
-import { Book, Globe, Users, Library, Settings } from 'lucide-react';
+import { Book, Globe, Users, Library, Settings, Home } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 type HeaderProps = {
@@ -16,6 +16,12 @@ export default function Header({ children }: HeaderProps) {
               <Logo />
             </Link>
             <nav className="hidden md:flex items-center gap-2">
+                <Link href="/" passHref>
+                    <Button variant="ghost" className="flex items-center gap-1">
+                        <Home className="h-4 w-4" />
+                        主页
+                    </Button>
+                </Link>
                  <Link href="/bookstore" passHref>
                     <Button variant="ghost" className="flex items-center gap-1">
                         <Library className="h-4 w-4" />

@@ -51,6 +51,12 @@ export function DeconstructOutline({ bookDetailUrl, sourceId }: DeconstructOutli
   const [availableModels, setAvailableModels] = useState<GeminiModel[]>([]);
   const [isModelListLoading, setIsModelListLoading] = useState(true);
   const [selectedModel, setSelectedModel] = useState('');
+  const [maxTokens, setMaxTokens] = useState<number>(() => {
+    if (typeof window === 'undefined') return 2048;
+    const saved = localStorage.getItem('deconstruct-max-tokens');
+    const n = saved ? parseInt(saved, 10) : 2048;
+    return Number.isFinite(n) && n > 256 ? n : 2048;
+  });
 
   useEffect(() => {
     async function fetchInitialData() {
@@ -160,7 +166,7 @@ ${chapterContent.content}`;
           prompt,
           {
             temperature: 0.3, // 低温度保证分析准确性
-            maxOutputTokens: 2048,
+            maxOutputTokens: maxTokens,
             systemInstruction,
           }
         );
@@ -242,6 +248,29 @@ ${chapterContent.content}`;
                         <span className="text-amber-600 dark:text-amber-400">⚠ 请先配置API密钥</span>
                       )}
                     </p>
+                    <div className="mt-3">
+                      <Label htmlFor='max-tokens-select'>最大输出长度</Label>
+                      <Select 
+                        value={String(maxTokens)} 
+                        onValueChange={(v) => {
+                          const n = parseInt(v, 10);
+                          setMaxTokens(n);
+                          if (typeof window !== 'undefined') {
+                            localStorage.setItem('deconstruct-max-tokens', String(n));
+                          }
+                        }}
+                      >
+                        <SelectTrigger id='max-tokens-select'>
+                          <SelectValue placeholder="选择最大输出长度" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[512, 1024, 1536, 2048, 3072, 4096, 6144, 8192].map(n => (
+                            <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground mt-1">超长章节建议搭配较大值；若提示 MAX_TOKENS，可适当增大或分段分析。</p>
+                    </div>
                   </div>
                 </div>
             ) : (

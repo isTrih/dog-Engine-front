@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { Loader2, CheckCircle, XCircle, FileScan, Copy, BadgeHelp, WandSparkles } from 'lucide-react';
 import type { Book, Chapter, ReviewResult } from '@/lib/types';
-import { reviewManuscript } from '@/ai/flows/review-manuscript';
+import { listGeminiModels, getDefaultModel, generateContent } from '@/lib/gemini-client';
 import { useToast } from '@/hooks/use-toast';
 import copy from 'copy-to-clipboard';
 import { Badge } from '@/components/ui/badge';
@@ -28,6 +28,8 @@ export default function ReviewPage() {
   
   const [isLoading, setIsLoading] = useState(false);
   const [reviewResult, setReviewResult] = useState<ReviewResult | null>(null);
+  const [models, setModels] = useState<{ id: string; displayName: string }[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('');
 
   const selectedBook = useMemo(() => books.find(b => b.id === selectedBookId), [books, selectedBookId]);
   const selectedChapter = useMemo(() => selectedBook?.chapters.find(c => c.id === selectedChapterId), [selectedBook, selectedChapterId]);
@@ -36,6 +38,20 @@ export default function ReviewPage() {
     if (selectedChapter) return selectedChapter.content;
     return pastedText;
   }, [selectedChapter, pastedText]);
+
+  // load models on mount
+  useMemo(() => {
+    (async () => {
+      try {
+        const list = await listGeminiModels();
+        setModels(list.map(m => ({ id: m.id, displayName: m.displayName })));
+        setSelectedModel(getDefaultModel());
+      } catch (e) {
+        // ignore; models will remain empty, we keep default
+        setSelectedModel(getDefaultModel());
+      }
+    })();
+  }, []);
 
   const handleBookSelect = (bookId: string) => {
     setSelectedBookId(bookId);
@@ -69,9 +85,19 @@ export default function ReviewPage() {
     setIsLoading(true);
     setReviewResult(null);
 
-    try {
-      const result = await reviewManuscript({ manuscript });
-      setReviewResult(result);
+  try {
+      const systemInstruction = '你是一个专业的网文编辑，在你的眼中，只有过稿和拒稿。遵循商业网文的审稿标准，基于提供的稿件严格给出结论。输出严格的JSON对象，不要任何解释或附加文本：{"decision":"过稿或拒稿","reason":"详细理由（若过稿只说优点；若拒稿只说问题与修改方向）"}';
+      const output = await generateContent(selectedModel || getDefaultModel(), `【稿件】\n${manuscript}` , { systemInstruction, maxOutputTokens: 1024, temperature: 0.2 });
+      let parsed: any;
+      try {
+        parsed = JSON.parse(output);
+      } catch (_) {
+        const m = output.match(/```[\s\S]*?\n([\s\S]*?)```/);
+        parsed = JSON.parse(m ? m[1] : output);
+      }
+      const decision = String(parsed.decision || '').includes('过') ? '过稿' : '拒稿';
+      const reason = String(parsed.reason || '').trim() || output.trim();
+      setReviewResult({ decision: decision as any, reason });
     } catch (error) {
       console.error("Review failed:", error);
       toast({
@@ -166,6 +192,25 @@ export default function ReviewPage() {
                   </div>
                 </TabsContent>
               </Tabs>
+              {/* Model selection */}
+              <div className="grid grid-cols-1 gap-2">
+                 <div className="space-y-2">
+                   <Label htmlFor="model-select">选择模型</Label>
+                   <Select onValueChange={setSelectedModel} value={selectedModel}>
+                      <SelectTrigger id="model-select">
+                        <SelectValue placeholder="选择一个模型" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(models.length > 0 ? models : [
+                          { id: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash' },
+                          { id: 'gemini-2.5-pro', displayName: 'Gemini 2.5 Pro' },
+                        ]).map(m => (
+                          <SelectItem key={m.id} value={m.id}>{m.displayName || m.id}</SelectItem>
+                        ))}
+                      </SelectContent>
+                   </Select>
+                 </div>
+              </div>
               
               <Button onClick={handleReview} disabled={isLoading || !manuscript.trim()} className="w-full text-lg py-6 font-headline">
                 {isLoading ? (

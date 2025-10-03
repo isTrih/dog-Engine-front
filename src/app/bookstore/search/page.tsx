@@ -39,8 +39,8 @@ async function fetchSources(): Promise<BookSource[]> {
 function SearchResults() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const q = searchParams.get('q') || '';
-    const sourceIdParam = searchParams.get('sourceId') || '';
+    const q = (searchParams && searchParams.get('q')) || '';
+    const sourceIdParam = (searchParams && searchParams.get('sourceId')) || '';
     
     const [allSources, setAllSources] = useState<BookSource[]>([]);
     const [enabledSources, setEnabledSources] = useState<BookSource[]>([]);
@@ -151,7 +151,7 @@ function SearchResults() {
                             <div className="flex items-start gap-4 p-4">
                                 <div className="flex-shrink-0">
                                     <Image
-                                      src={book.cover || `https://placehold.co/120x160.png`}
+                                      src={book.cover ? `/api/proxy-image?url=${encodeURIComponent(book.cover)}` : `https://placehold.co/120x160.png`}
                                       alt={book.title}
                                       width={90}
                                       height={120}

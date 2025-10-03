@@ -270,8 +270,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             }
         };
 
+        // 书名主解析
+        let parsedTitle = parseWithRules(bookDataContainer, bookInfoRule.name, detailUrl);
+        if (!parsedTitle || parsedTitle.trim().length === 0) {
+            try {
+                // 回退1：尝试从 <title> 提取（去站点名等杂项）
+                const $ = cheerio.load(typeof html === 'string' ? html : '');
+                const rawTitle = ($('title').first().text() || '').trim();
+                parsedTitle = rawTitle.replace(/[《》\-_|｜]|(最新章节.*$)/g, '').trim();
+            } catch {}
+        }
+        if (!parsedTitle || parsedTitle.trim().length === 0) {
+            // 回退2：使用URL末段（去掉扩展名和参数）
+            try {
+                const u = new URL(detailUrl);
+                const last = decodeURIComponent(u.pathname.split('/').filter(Boolean).pop() || '');
+                parsedTitle = last.replace(/\.(html?|php|aspx)$/i, '').replace(/[-_]/g, ' ').trim();
+            } catch {}
+        }
+
         const bookDetail: BookstoreBookDetail = {
-            title: parseWithRules(bookDataContainer, bookInfoRule.name, detailUrl),
+            title: parsedTitle || '',
             author: parseWithRules(bookDataContainer, bookInfoRule.author, detailUrl),
             cover: (await decodeCoverIfNeeded(parseWithRules(bookDataContainer, bookInfoRule.coverUrl, detailUrl), source)) || parseWithRules(bookDataContainer, bookInfoRule.coverUrl, detailUrl),
             description: sanitizeIntroHtml(rawDescription),
