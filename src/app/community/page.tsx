@@ -6,6 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ThumbsUp, Plus, Loader2, Copy, Send, KeyRound, Eye, EyeOff } from 'lucide-react';
 import { getVisiblePrompts, addPrompt, likePrompt } from '@/lib/actions/community';
+import { getRemoteVisiblePrompts, addRemotePrompt, likeRemotePrompt, deleteRemotePrompt, updateRemotePrompt } from '@/lib/community-remote';
+import { deletePrompt, updatePrompt } from '@/lib/actions/community';
+import { Server } from 'lucide-react';
 import type { CommunityPrompt } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
@@ -27,7 +30,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 
-function PromptCard({ prompt, handleLike }: { prompt: CommunityPrompt; handleLike: (id: string) => void }) {
+function PromptCard({ prompt, handleLike, onLocalDelete, onLocalEdit }: { prompt: CommunityPrompt; handleLike: (id: string) => void, onLocalDelete: (id: string) => void, onLocalEdit: (p: CommunityPrompt) => void }) {
     const { toast } = useToast();
 
     const handleCopy = () => {
@@ -53,10 +56,15 @@ function PromptCard({ prompt, handleLike }: { prompt: CommunityPrompt; handleLik
                             <ThumbsUp className="h-4 w-4" />
                             {prompt.likes}
                         </Button>
-                        <Button variant="outline" size="sm" onClick={handleCopy}>
-                            <Copy className="h-4 w-4 mr-1" />
-                            使用此设定
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Button variant="outline" size="sm" onClick={handleCopy}>
+                              <Copy className="h-4 w-4 mr-1" />
+                              复制
+                          </Button>
+                          {/* 本地管理：编辑/删除 */}
+                          <Button variant="destructive" size="sm" onClick={() => onLocalDelete(prompt.id)}>删除(本地)</Button>
+                          <Button variant="secondary" size="sm" onClick={() => onLocalEdit(prompt)}>编辑(本地)</Button>
+                        </div>
                     </div>
                 </div>
             </CardContent>
@@ -68,26 +76,43 @@ function PublishDialog({ onPublished }: { onPublished: () => void }) {
     const [open, setOpen] = useState(false);
     const [name, setName] = useState('');
     const [prompt, setPrompt] = useState('');
-    const [password, setPassword] = useState('');
+    // 已不需要密码
     const [visible, setVisible] = useState(true);
+  const [uploadToServer, setUploadToServer] = useState(false); // 默认本地，勾选后上传服务器
     const [isLoading, setIsLoading] = useState(false);
     const { toast } = useToast();
 
     const handlePublish = async () => {
         setIsLoading(true);
-        const result = await addPrompt({ name, prompt, visible, password });
+    let success = false;
+    let message: string | undefined = '';
+    if (uploadToServer) {
+      // 先尝试远程，失败回落本地
+      const ok = await addRemotePrompt({ name, prompt, visible });
+      success = ok.success;
+      message = ok.message;
+      if (!success) {
+        const local = await addPrompt({ name, prompt, visible });
+        success = local.success;
+        message = local.message;
+      }
+    } else {
+      // 仅本地
+      const local = await addPrompt({ name, prompt, visible });
+      success = local.success;
+      message = local.message;
+    }
         setIsLoading(false);
 
-        if (result.success) {
+        if (success) {
             toast({ title: '发布成功！', description: '你的 AI 角色设定已在社区分享。' });
             setOpen(false);
             setName('');
             setPrompt('');
-            setPassword('');
             setVisible(true);
             onPublished();
         } else {
-            toast({ title: '发布失败', description: result.message, variant: 'destructive' });
+            toast({ title: '发布失败', description: message || '请检查服务器设置或本地发布密码', variant: 'destructive' });
         }
     };
 
@@ -114,19 +139,22 @@ function PublishDialog({ onPublished }: { onPublished: () => void }) {
                         <Textarea id="prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="详细描述角色的性格、背景、说话方式等..." rows={5} />
                     </div>
                     <div>
-                        <Label htmlFor="password">发布密码</Label>
-                        <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="请输入发布密码" />
+                        {/* 远程发布已不需要发布密码 */}
                     </div>
                      <div className="flex items-center space-x-2">
                         <Switch id="visible-switch" checked={visible} onCheckedChange={setVisible} />
                         <Label htmlFor="visible-switch" className="flex items-center gap-1 cursor-pointer">{visible ? <><Eye className="h-4 w-4"/>公开分享</> : <><EyeOff className="h-4 w-4"/>仅自己可见</>}</Label>
                     </div>
+                  <div className="flex items-center space-x-2">
+                    <Switch id="upload-server" checked={uploadToServer} onCheckedChange={setUploadToServer} />
+                    <Label htmlFor="upload-server" className="cursor-pointer">上传到服务器（默认只保存到本地社区）</Label>
+                  </div>
                 </div>
                 <DialogFooter>
                     <DialogClose asChild>
                         <Button variant="secondary">取消</Button>
                     </DialogClose>
-                    <Button onClick={handlePublish} disabled={isLoading || !name.trim() || !prompt.trim() || !password.trim()}>
+                    <Button onClick={handlePublish} disabled={isLoading || !name.trim() || !prompt.trim()}>
                         {isLoading ? <Loader2 className="animate-spin" /> : <Send className="mr-2" />}
                         发布
                     </Button>
@@ -148,7 +176,17 @@ export default function CommunityPage() {
 
     const fetchPrompts = async () => {
         setIsLoading(true);
-        const data = await getVisiblePrompts();
+        let data: CommunityPrompt[] = [];
+        try {
+            // 优先从远程服务获取
+            const remote = await getRemoteVisiblePrompts();
+            if (Array.isArray(remote) && remote.length >= 0) data = remote;
+        } catch (e) {
+            // 忽略远程错误，回退到本地
+        }
+        if (data.length === 0) {
+            data = await getVisiblePrompts();
+        }
         setPrompts(data);
         setIsLoading(false);
     };
@@ -157,12 +195,31 @@ export default function CommunityPage() {
         fetchPrompts();
     }, []);
 
+    const handleLocalDelete = async (id: string) => {
+        const res = await deletePrompt(id);
+        if (res.success) {
+            setPrompts(prompts.filter(p => p.id !== id));
+        }
+    };
+
+    const handleLocalEdit = async (p: CommunityPrompt) => {
+        const name = window.prompt('编辑名称', p.name);
+        if (name === null) return;
+        const promptText = window.prompt('编辑提示词', p.prompt);
+        if (promptText === null) return;
+        await updatePrompt({ id: p.id, name, prompt: promptText });
+        setPrompts(prompts.map(x => x.id === p.id ? { ...x, name, prompt: promptText } : x));
+    };
+
     const handleLike = async (id: string) => {
         const currentPrompt = prompts.find(p => p.id === id);
         if (!currentPrompt) return;
 
         setOptimisticPrompts({ id, newLikes: currentPrompt.likes + 1 });
-        const result = await likePrompt(id);
+        let result = await likeRemotePrompt(id);
+        if (!result.success) {
+            result = await likePrompt(id);
+        }
         if (result.success) {
             setPrompts(prompts.map(p => p.id === id ? {...p, likes: result.newLikes!} : p));
         }
@@ -173,9 +230,14 @@ export default function CommunityPage() {
             <Header />
             <main className="flex-grow container mx-auto p-4 md:p-6 lg:p-8">
                 <div className="flex justify-between items-center mb-6">
-                    <div>
+                    <div className="flex items-center gap-2">
                         <h1 className="text-3xl font-bold font-headline">创作社区</h1>
                         <p className="text-muted-foreground mt-1">发现和分享驱动故事的 AI 角色设定</p>
+                        <Button asChild variant="outline" size="sm" className="gap-2">
+                          <a href={`${process.env.NEXT_PUBLIC_COMMUNITY_SERVER || 'http://47.95.220.140:8880'}/upload`} target="_blank" rel="noopener noreferrer">
+                            <Server className="w-4 h-4" /> 服务器
+                          </a>
+                        </Button>
                     </div>
                     <PublishDialog onPublished={fetchPrompts} />
                 </div>
@@ -202,7 +264,7 @@ export default function CommunityPage() {
                 ) : optimisticPrompts.length > 0 ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {optimisticPrompts.map(prompt => (
-                            <PromptCard key={prompt.id} prompt={prompt} handleLike={handleLike} />
+                            <PromptCard key={prompt.id} prompt={prompt} handleLike={handleLike} onLocalDelete={handleLocalDelete} onLocalEdit={handleLocalEdit} />
                         ))}
                     </div>
                 ) : (

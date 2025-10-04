@@ -403,3 +403,95 @@ export function getDefaultModel(): string {
     return DEFAULT_MODELS.FAST;
 }
 
+/**
+ * 流式生成内容（用于逐行输出）
+ */
+export async function* generateContentStream(
+    modelId: string,
+    prompt: string,
+    options?: {
+        temperature?: number;
+        maxOutputTokens?: number;
+        systemInstruction?: string;
+        apiKey?: string;
+    }
+): AsyncGenerator<string, void, unknown> {
+    const key = options?.apiKey || getApiKey();
+    if (!key) {
+        throw new Error('请先配置Gemini API密钥');
+    }
+
+    const messages: GeminiMessage[] = [];
+    
+    if (options?.systemInstruction) {
+        messages.push({
+            role: 'user',
+            parts: [{ text: options.systemInstruction }],
+        });
+    }
+    
+    messages.push({
+        role: 'user',
+        parts: [{ text: prompt }],
+    });
+
+    const requestBody: GeminiGenerateRequest = {
+        contents: messages,
+        generationConfig: {
+            temperature: options?.temperature ?? 0.7,
+            maxOutputTokens: options?.maxOutputTokens ?? 2048,
+        },
+        safetySettings: buildSafetySettings(),
+    };
+
+    try {
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:streamGenerateContent?key=${key}&alt=sse`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestBody),
+            }
+        );
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`API调用失败: ${response.status}`);
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('无法获取响应流');
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (!line.trim() || !line.startsWith('data: ')) continue;
+                
+                try {
+                    const jsonStr = line.slice(6);
+                    const data = JSON.parse(jsonStr);
+                    
+                    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text) {
+                        yield text;
+                    }
+                } catch (e) {
+                    // 忽略解析错误
+                }
+            }
+        }
+    } catch (error: any) {
+        console.error('Stream generation failed:', error);
+        throw error;
+    }
+}
+

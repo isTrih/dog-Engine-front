@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 import type { CommunityPrompt } from '@/lib/types';
 
 const dataFilePath = path.join(process.cwd(), 'src', 'data', 'community-prompts.json');
-const PUBLISH_PASSWORD = 'xiezuo';
+// 本地存储版社区，无需发布密码
 
 async function readPrompts(): Promise<CommunityPrompt[]> {
   try {
@@ -47,10 +47,7 @@ export async function getVisiblePrompts(): Promise<CommunityPrompt[]> {
 }
 
 
-export async function addPrompt(data: { name: string; prompt: string; visible: boolean; password?: string }): Promise<{ success: boolean; message: string }> {
-  if (data.password !== PUBLISH_PASSWORD) {
-    return { success: false, message: '发布密码不正确！' };
-  }
+export async function addPrompt(data: { name: string; prompt: string; visible: boolean }): Promise<{ success: boolean; message: string }> {
 
   if (!data.name.trim() || !data.prompt.trim()) {
     return { success: false, message: '角色名和角色设定不能为空。' };
@@ -85,4 +82,24 @@ export async function likePrompt(id: string): Promise<{ success: boolean; newLik
   await writePrompts(prompts);
 
   return { success: true, newLikes: prompts[promptIndex].likes };
+}
+
+export async function deletePrompt(id: string): Promise<{ success: boolean }> {
+  const prompts = await readPrompts();
+  const idx = prompts.findIndex(p => p.id === id);
+  if (idx === -1) return { success: false };
+  prompts.splice(idx, 1);
+  await writePrompts(prompts);
+  return { success: true };
+}
+
+export async function updatePrompt(data: { id: string; name?: string; prompt?: string; visible?: boolean }): Promise<{ success: boolean }> {
+  const prompts = await readPrompts();
+  const idx = prompts.findIndex(p => p.id === data.id);
+  if (idx === -1) return { success: false };
+  if (typeof data.name === 'string') prompts[idx].name = data.name;
+  if (typeof data.prompt === 'string') prompts[idx].prompt = data.prompt;
+  if (typeof data.visible === 'boolean') prompts[idx].visible = data.visible;
+  await writePrompts(prompts);
+  return { success: true };
 }
