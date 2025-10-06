@@ -7,7 +7,7 @@ import type { BookSource } from './types';
 import fs from 'fs/promises';
 import path from 'path';
 
-const isVercel = !!process.env.VERCEL;
+const isVercel = !!(process.env?.VERCEL || '');
 const dataFilePath = isVercel
     ? path.join('/tmp', 'book_sources.json')
     : path.join(process.cwd(), 'book_sources.json');

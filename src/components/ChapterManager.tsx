@@ -69,11 +69,11 @@ export default function ChapterManager({ book, updateBook, activeChapter, setAct
 
   const [rewritePersona, setRewritePersona] = useState<string>(() => {
     if (typeof window === 'undefined') return DEFAULT_REWRITE_PERSONA;
-    return localStorage.getItem('chapter-rewrite-persona') || DEFAULT_REWRITE_PERSONA;
+    return (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))('chapter-rewrite-persona') || DEFAULT_REWRITE_PERSONA;
   });
   const [rewritePrompt, setRewritePrompt] = useState<string>(() => {
     if (typeof window === 'undefined') return DEFAULT_REWRITE_PROMPT;
-    return localStorage.getItem('chapter-rewrite-prompt') || DEFAULT_REWRITE_PROMPT;
+    return (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))('chapter-rewrite-prompt') || DEFAULT_REWRITE_PROMPT;
   });
   
   // AI model settings
@@ -82,7 +82,7 @@ export default function ChapterManager({ book, updateBook, activeChapter, setAct
   const [selectedModel, setSelectedModel] = useState('');
   const [maxTokens, setMaxTokens] = useState<number>(() => {
     if (typeof window === 'undefined') return 4096;
-    const saved = localStorage.getItem('chapter-rewrite-max-tokens');
+    const saved = (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))('chapter-rewrite-max-tokens');
     const n = saved ? parseInt(saved, 10) : 4096;
     return Number.isFinite(n) && n > 256 ? n : 4096;
   });
@@ -285,13 +285,13 @@ export default function ChapterManager({ book, updateBook, activeChapter, setAct
   const persistRewritePersona = (text: string) => {
     setRewritePersona(text);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('chapter-rewrite-persona', text);
+      (typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))('chapter-rewrite-persona', text);
     }
   };
   const persistRewritePrompt = (text: string) => {
     setRewritePrompt(text);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('chapter-rewrite-prompt', text);
+      (typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))('chapter-rewrite-prompt', text);
     }
   };
 
@@ -517,7 +517,7 @@ export default function ChapterManager({ book, updateBook, activeChapter, setAct
                                             const n = parseInt(v, 10);
                                             setMaxTokens(n);
                                             if (typeof window !== 'undefined') {
-                                                localStorage.setItem('chapter-rewrite-max-tokens', String(n));
+                                                (typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))('chapter-rewrite-max-tokens', String(n));
                                             }
                                         }}
                                     >

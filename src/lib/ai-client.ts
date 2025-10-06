@@ -166,11 +166,38 @@ export interface AIConfig {
 }
 
 /**
+ * EdgeOne兼容的localStorage访问器
+ */
+function safeLocalStorageGetItem(key: string): string | null {
+	if (typeof window === "undefined") {
+		console.warn("EdgeOne兼容: 服务端不支持localStorage");
+		return null;
+	}
+	return localStorage.getItem(key);
+}
+
+function safeLocalStorageSetItem(key: string, value: string): void {
+	if (typeof window === "undefined") {
+		console.warn("EdgeOne兼容: 服务端不支持localStorage");
+		return;
+	}
+	localStorage.setItem(key, value);
+}
+
+function safeLocalStorageRemoveItem(key: string): void {
+	if (typeof window === "undefined") {
+		console.warn("EdgeOne兼容: 服务端不支持localStorage");
+		return;
+	}
+	localStorage.removeItem(key);
+}
+
+/**
  * 调试模式检查
  */
 function isAIDebugEnabled(): boolean {
 	if (typeof window === "undefined") return false;
-	const v = localStorage.getItem("ai-debug");
+	const v = safeLocalStorageGetItem("ai-debug");
 	return v === "1" || v === "true" || v === "on";
 }
 
@@ -179,7 +206,7 @@ function isAIDebugEnabled(): boolean {
  */
 function getAITimeoutMs(): number {
 	if (typeof window === "undefined") return 30000;
-	const raw = localStorage.getItem("ai-timeout-ms");
+	const raw = safeLocalStorageGetItem("ai-timeout-ms");
 	const n = raw ? parseInt(raw, 10) : 30000;
 	return Number.isFinite(n) && n >= 5000 ? n : 30000;
 }
@@ -189,7 +216,7 @@ function getAITimeoutMs(): number {
  */
 function getAIRetries(): number {
 	if (typeof window === "undefined") return 1;
-	const raw = localStorage.getItem("ai-retries");
+	const raw = safeLocalStorageGetItem("ai-retries");
 	const n = raw ? parseInt(raw, 10) : 1;
 	return Number.isFinite(n) && n >= 0 && n <= 3 ? n : 1;
 }
@@ -209,7 +236,7 @@ function createTimeoutSignal(timeoutMs: number): AbortSignal {
 export function getAIConfig(): AIConfig | null {
 	if (typeof window === "undefined") return null;
 
-	const config = localStorage.getItem("ai-config");
+	const config = safeLocalStorageGetItem("ai-config");
 	if (!config) return null;
 
 	try {
@@ -224,7 +251,7 @@ export function getAIConfig(): AIConfig | null {
  */
 export function saveAIConfig(config: AIConfig): void {
 	if (typeof window === "undefined") return;
-	localStorage.setItem("ai-config", JSON.stringify(config));
+	safeLocalStorageSetItem("ai-config", JSON.stringify(config));
 }
 
 /**
@@ -232,7 +259,7 @@ export function saveAIConfig(config: AIConfig): void {
  */
 export function clearAIConfig(): void {
 	if (typeof window === "undefined") return;
-	localStorage.removeItem("ai-config");
+	safeLocalStorageRemoveItem("ai-config");
 }
 
 /**

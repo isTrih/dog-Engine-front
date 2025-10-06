@@ -149,7 +149,7 @@ export default function BookstorePage() {
             const activeSources = sources.filter(s => s.enabled);
             setEnabledSources(activeSources);
             if (activeSources.length > 0) {
-                const lastUsedSourceId = localStorage.getItem('last-used-source-id');
+                const lastUsedSourceId = (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))('last-used-source-id');
                 if (lastUsedSourceId && activeSources.some(s => s.id === lastUsedSourceId)) {
                     setSelectedSourceId(lastUsedSourceId);
                 } else {
@@ -163,7 +163,7 @@ export default function BookstorePage() {
 
     const handleSourceChange = (sourceId: string) => {
         setSelectedSourceId(sourceId);
-        localStorage.setItem('last-used-source-id', sourceId);
+        (typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))('last-used-source-id', sourceId);
     }
     
     useEffect(() => {

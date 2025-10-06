@@ -10,7 +10,7 @@ import { type AIConfig, getAIConfig, saveAIConfig } from "./ai-client";
  */
 export function hasLegacyGeminiConfig(): boolean {
 	if (typeof window === "undefined") return false;
-	return !!localStorage.getItem("gemini-api-key");
+	return !!(typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("gemini-api-key");
 }
 
 /**
@@ -22,11 +22,11 @@ export function getLegacyGeminiConfig(): {
 } | null {
 	if (typeof window === "undefined") return null;
 
-	const apiKey = localStorage.getItem("gemini-api-key");
+	const apiKey = (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("gemini-api-key");
 	if (!apiKey) return null;
 
 	// 尝试获取保存的模型设置
-	const savedSettings = localStorage.getItem("gemini-settings");
+	const savedSettings = (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("gemini-settings");
 	let model = "gemini-2.5-flash"; // 默认模型
 
 	if (savedSettings) {
@@ -117,12 +117,12 @@ export function cleanupLegacyGeminiConfig(): void {
 	if (typeof window === "undefined") return;
 
 	try {
-		localStorage.removeItem("gemini-api-key");
-		localStorage.removeItem("gemini-settings");
-		localStorage.removeItem("gemini-debug");
-		localStorage.removeItem("gemini-timeout-ms");
-		localStorage.removeItem("gemini-retries");
-		localStorage.removeItem("gemini-safety");
+		(typeof window !== 'undefined' ? localStorage.removeItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("gemini-api-key");
+		(typeof window !== 'undefined' ? localStorage.removeItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("gemini-settings");
+		(typeof window !== 'undefined' ? localStorage.removeItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("gemini-debug");
+		(typeof window !== 'undefined' ? localStorage.removeItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("gemini-timeout-ms");
+		(typeof window !== 'undefined' ? localStorage.removeItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("gemini-retries");
+		(typeof window !== 'undefined' ? localStorage.removeItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("gemini-safety");
 
 		console.log("旧的Gemini配置已清理");
 	} catch (error) {
@@ -170,23 +170,23 @@ export function migrateAllGeminiSettings(): {
 
 		// 迁移调试设置
 		if (typeof window !== "undefined") {
-			const debugSetting = localStorage.getItem("gemini-debug");
+			const debugSetting = (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("gemini-debug");
 			if (debugSetting) {
-				localStorage.setItem("ai-debug", debugSetting);
+				(typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("ai-debug", debugSetting);
 				migratedItems.push("调试设置");
 			}
 
 			// 迁移超时设置
-			const timeoutSetting = localStorage.getItem("gemini-timeout-ms");
+			const timeoutSetting = (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("gemini-timeout-ms");
 			if (timeoutSetting) {
-				localStorage.setItem("ai-timeout-ms", timeoutSetting);
+				(typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("ai-timeout-ms", timeoutSetting);
 				migratedItems.push("超时设置");
 			}
 
 			// 迁移重试设置
-			const retrySetting = localStorage.getItem("gemini-retries");
+			const retrySetting = (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("gemini-retries");
 			if (retrySetting) {
-				localStorage.setItem("ai-retries", retrySetting);
+				(typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("ai-retries", retrySetting);
 				migratedItems.push("重试设置");
 			}
 		}

@@ -1,0 +1,161 @@
+{
+  "timestamp": "2025-10-06T13:34:09.920Z",
+  "summary": {
+    "totalChecks": 13,
+    "passedChecks": 7,
+    "failedChecks": 6,
+    "healthScore": 54
+  },
+  "categories": {
+    "development": [
+      {
+        "name": "Next.js配置",
+        "passed": false,
+        "message": "配置检查失败: Assignment to constant variable.",
+        "details": {
+          "error": "Assignment to constant variable."
+        }
+      },
+      {
+        "name": "依赖检查",
+        "passed": true,
+        "message": "55个依赖包已安装",
+        "details": {
+          "totalDeps": 55
+        }
+      },
+      {
+        "name": "TypeScript编译",
+        "passed": true,
+        "message": "类型检查通过"
+      },
+      {
+        "name": "本地服务器",
+        "passed": true,
+        "message": "端口9002可用",
+        "details": {
+          "port": 9002
+        }
+      }
+    ],
+    "api": [
+      {
+        "name": "书源API",
+        "passed": false,
+        "message": "Request failed: ",
+        "details": {
+          "path": "/api/book-sources",
+          "method": "GET",
+          "error": "Request failed: "
+        }
+      },
+      {
+        "name": "代理请求API",
+        "passed": false,
+        "message": "Request failed: ",
+        "details": {
+          "path": "/api/proxy-fetch",
+          "method": "POST",
+          "error": "Request failed: "
+        }
+      },
+      {
+        "name": "代理测试API",
+        "passed": false,
+        "message": "Request failed: ",
+        "details": {
+          "path": "/api/test-proxy",
+          "method": "GET",
+          "error": "Request failed: "
+        }
+      }
+    ],
+    "runtime": [
+      {
+        "name": "Web APIs兼容性",
+        "passed": true,
+        "message": "6/6 APIs可用",
+        "details": {
+          "available": [
+            "fetch",
+            "URL",
+            "URLSearchParams",
+            "Headers",
+            "Request",
+            "Response"
+          ],
+          "missing": [],
+          "compatibilityRatio": 100
+        }
+      },
+      {
+        "name": "Node.js功能兼容性",
+        "passed": true,
+        "message": "Node.js功能检查通过",
+        "details": {
+          "total": 4,
+          "problematic": []
+        }
+      },
+      {
+        "name": "边缘配置",
+        "passed": true,
+        "message": "配置文件完整",
+        "details": {
+          "configPath": "/Users/trih/WebstormProjects/dog-Engine-front/edge-config.json",
+          "sections": [
+            "name",
+            "version",
+            "description",
+            "edge",
+            "features",
+            "compatibility",
+            "security",
+            "performance",
+            "monitoring",
+            "fallbacks",
+            "migration",
+            "testing",
+            "deployment"
+          ],
+          "missing": []
+        }
+      }
+    ],
+    "deployment": [
+      {
+        "name": "EdgeOne部署",
+        "passed": true,
+        "message": "配置文件已就绪",
+        "details": {
+          "hasConfig": true
+        }
+      }
+    ],
+    "performance": [
+      {
+        "name": "首页加载",
+        "passed": false,
+        "message": "性能测试失败: Request failed: ",
+        "details": {
+          "error": "Request failed: "
+        }
+      },
+      {
+        "name": "API响应",
+        "passed": false,
+        "message": "性能测试失败: Request failed: ",
+        "details": {
+          "error": "Request failed: "
+        }
+      }
+    ]
+  },
+  "recommendations": [
+    {
+      "type": "general",
+      "message": "检查服务器是否正在运行: npm run dev",
+      "priority": "medium"
+    }
+  ]
+}

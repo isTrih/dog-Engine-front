@@ -6,7 +6,7 @@ import { testProxyConnection } from '@/lib/proxy-fetch';
  * 访问: http://localhost:9002/api/test-proxy
  */
 export async function GET() {
-    const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.ALL_PROXY;
+    const proxyUrl = (process.env?.HTTPS_PROXY || '') || (process.env?.HTTP_PROXY || '') || (process.env?.ALL_PROXY || '');
     
     console.log('=== Proxy Test ===');
     console.log('Proxy URL:', proxyUrl || 'Not configured');

@@ -7,27 +7,27 @@ const TOKEN_KEY = 'community-api-token';
 
 export function getCommunityBase(): string | null {
   if (typeof window === 'undefined') return null;
-  return localStorage.getItem(BASE_KEY);
+  return (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))(BASE_KEY);
 }
 
 export function setCommunityBase(base: string) {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(BASE_KEY, base.replace(/\/$/, ''));
+  (typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))(BASE_KEY, base.replace(/\/$/, ''));
 }
 
 export function getCommunityToken(): string | null {
   if (typeof window === 'undefined') return null;
-  return localStorage.getItem(TOKEN_KEY);
+  return (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))(TOKEN_KEY);
 }
 
 export function setCommunityToken(token: string) {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(TOKEN_KEY, token);
+  (typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))(TOKEN_KEY, token);
 }
 
 export function clearCommunityToken() {
   if (typeof window === 'undefined') return;
-  localStorage.removeItem(TOKEN_KEY);
+  (typeof window !== 'undefined' ? localStorage.removeItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))(TOKEN_KEY);
 }
 
 function getHeaders() {

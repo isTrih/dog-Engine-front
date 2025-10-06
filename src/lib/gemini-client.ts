@@ -50,20 +50,20 @@ export interface GeminiGenerateResponse {
  */
 function isGeminiDebugEnabled(): boolean {
     if (typeof window === 'undefined') return false;
-    const v = localStorage.getItem('gemini-debug');
+    const v = (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))('gemini-debug');
     return v === '1' || v === 'true' || v === 'on';
 }
 
 function getGeminiTimeoutMs(): number {
     if (typeof window === 'undefined') return 30000;
-    const raw = localStorage.getItem('gemini-timeout-ms');
+    const raw = (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))('gemini-timeout-ms');
     const n = raw ? parseInt(raw, 10) : 30000;
     return Number.isFinite(n) && n >= 5000 ? n : 30000;
 }
 
 function getGeminiRetries(): number {
     if (typeof window === 'undefined') return 1;
-    const raw = localStorage.getItem('gemini-retries');
+    const raw = (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))('gemini-retries');
     const n = raw ? parseInt(raw, 10) : 1;
     return Number.isFinite(n) && n >= 0 && n <= 3 ? n : 1;
 }
@@ -71,7 +71,7 @@ function getGeminiRetries(): number {
 // 用户可控的安全阈值：localStorage 设置 'gemini-safety' 为 'off' 以完全关闭
 function getSafetyMode(): 'off' | 'default' {
     if (typeof window === 'undefined') return 'default';
-    const v = (localStorage.getItem('gemini-safety') || '').toLowerCase();
+    const v = ((typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))('gemini-safety') || '').toLowerCase();
     return v === 'off' ? 'off' : 'default';
 }
 
@@ -95,7 +95,7 @@ function buildSafetySettings(): GeminiGenerateRequest['safetySettings'] {
  */
 export function getApiKey(): string | null {
     if (typeof window === 'undefined') return null;
-    return localStorage.getItem('gemini-api-key');
+    return (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))('gemini-api-key');
 }
 
 /**
@@ -103,7 +103,7 @@ export function getApiKey(): string | null {
  */
 export function saveApiKey(apiKey: string): void {
     if (typeof window === 'undefined') return;
-    localStorage.setItem('gemini-api-key', apiKey.trim());
+    (typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))('gemini-api-key', apiKey.trim());
 }
 
 /**
@@ -111,7 +111,7 @@ export function saveApiKey(apiKey: string): void {
  */
 export function clearApiKey(): void {
     if (typeof window === 'undefined') return;
-    localStorage.removeItem('gemini-api-key');
+    (typeof window !== 'undefined' ? localStorage.removeItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))('gemini-api-key');
 }
 
 /**

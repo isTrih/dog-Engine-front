@@ -124,7 +124,7 @@ export default function Editor({
 	const [useCompressedContext, setUseCompressedContext] = useState<boolean>(
 		() => {
 			if (typeof window === "undefined") return true;
-			const v = localStorage.getItem("context-compress-use");
+			const v = (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("context-compress-use");
 			return v === null ? true : v === "1";
 		},
 	);
@@ -133,20 +133,20 @@ export default function Editor({
 	const [compressPersona, setCompressPersona] = useState<string>(() => {
 		if (typeof window === "undefined") return DEFAULT_COMPRESS_PERSONA;
 		return (
-			localStorage.getItem("context-compress-persona") ||
+			(typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("context-compress-persona") ||
 			DEFAULT_COMPRESS_PERSONA
 		);
 	});
 	const [compressPrompt, setCompressPrompt] = useState<string>(() => {
 		if (typeof window === "undefined") return DEFAULT_COMPRESS_PROMPT;
 		return (
-			localStorage.getItem("context-compress-prompt") || DEFAULT_COMPRESS_PROMPT
+			(typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("context-compress-prompt") || DEFAULT_COMPRESS_PROMPT
 		);
 	});
 	const [compressModel, setCompressModel] = useState<string>("");
 	const [compressMaxTokens, setCompressMaxTokens] = useState<number>(() => {
 		if (typeof window === "undefined") return 2048;
-		const saved = localStorage.getItem("context-compress-max-tokens");
+		const saved = (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("context-compress-max-tokens");
 		const n = saved ? parseInt(saved, 10) : 2048;
 		return Number.isFinite(n) && n >= 512 ? n : 2048;
 	});
@@ -198,7 +198,7 @@ export default function Editor({
 	const DEFAULT_PLOT_PERSONA = `你是一个擅长爽点设计与反转的网文作者，精于承接前文并自然引出下一章的冲突与悬念。请基于上文续写"下一章"的首稿，要求：\n- 保持已有设定与角色性格一致\n- 设计清晰的段落推进（起→承→转→合）\n- 至少给出1个强悬念或爆点（以结尾埋钩）\n- 语言保持网文节奏，短句为主，镜头感强`;
 	const [plotPersona, setPlotPersona] = useState<string>(() => {
 		if (typeof window === "undefined") return DEFAULT_PLOT_PERSONA;
-		return localStorage.getItem("plot-persona") || DEFAULT_PLOT_PERSONA;
+		return (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("plot-persona") || DEFAULT_PLOT_PERSONA;
 	});
 	const [plotDissatisfaction, setPlotDissatisfaction] = useState<string>("");
 	const [plotResult, setPlotResult] = useState<string>("");
@@ -209,7 +209,7 @@ export default function Editor({
 		if (selected) {
 			setPlotPersona(selected.prompt);
 			if (typeof window !== "undefined")
-				localStorage.setItem("plot-persona", selected.prompt);
+				(typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("plot-persona", selected.prompt);
 			toast({
 				title: "已应用社区提示词",
 				description: `已套用：${selected.name}`,
@@ -288,7 +288,7 @@ export default function Editor({
 	const [isProofing, setIsProofing] = useState(false);
 	const [proofModel, setProofModel] = useState(() => {
 		if (typeof window === "undefined") return "gemini-2.5-flash-lite";
-		return localStorage.getItem("proof-model") || "gemini-2.5-flash-lite";
+		return (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("proof-model") || "gemini-2.5-flash-lite";
 	});
 	const [isProofResultOpen, setIsProofResultOpen] = useState(false);
 	const [proofDiffHtml, setProofDiffHtml] = useState("");
@@ -493,10 +493,10 @@ export default function Editor({
 	}, [chapter]);
 
 	useEffect(() => {
-		const outline = localStorage.getItem(DECONSTRUCT_OUTLINE_KEY);
+		const outline = (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))(DECONSTRUCT_OUTLINE_KEY);
 		if (outline) {
 			setPrompt(outline);
-			localStorage.removeItem(DECONSTRUCT_OUTLINE_KEY);
+			(typeof window !== 'undefined' ? localStorage.removeItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))(DECONSTRUCT_OUTLINE_KEY);
 			setIsAiDialogOpen(true); // Open the dialog automatically
 			toast({
 				title: "细纲已应用",
@@ -698,7 +698,7 @@ ${fullChapterContext ? `\n=== 当前章节内容 ===\n${fullChapterContext}\n` :
 			setCompressedContext(summary);
 			setUseCompressedContext(true);
 			if (typeof window !== "undefined")
-				localStorage.setItem("context-compress-use", "1");
+				(typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("context-compress-use", "1");
 			toast({
 				title: "压缩完成",
 				description: "已生成剧情要点，将在生成时优先使用。",
@@ -832,7 +832,7 @@ ${fullChapterContext ? `\n=== 当前章节内容 ===\n${fullChapterContext}\n` :
 													onClick={() => {
 														setPlotPersona(DEFAULT_PLOT_PERSONA);
 														if (typeof window !== "undefined")
-															localStorage.setItem(
+															(typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))(
 																"plot-persona",
 																DEFAULT_PLOT_PERSONA,
 															);
@@ -848,7 +848,7 @@ ${fullChapterContext ? `\n=== 当前章节内容 ===\n${fullChapterContext}\n` :
 											onChange={(e) => {
 												setPlotPersona(e.target.value);
 												if (typeof window !== "undefined")
-													localStorage.setItem("plot-persona", e.target.value);
+													(typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("plot-persona", e.target.value);
 											}}
 											placeholder="输入续写提示词"
 										/>
@@ -1010,7 +1010,7 @@ ${fullChapterContext ? `\n=== 当前章节内容 ===\n${fullChapterContext}\n` :
 								onValueChange={(v) => {
 									setProofModel(v);
 									if (typeof window !== "undefined")
-										localStorage.setItem("proof-model", v);
+										(typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("proof-model", v);
 								}}
 								disabled={isModelListLoading}
 							>
@@ -1244,7 +1244,7 @@ ${fullChapterContext ? `\n=== 当前章节内容 ===\n${fullChapterContext}\n` :
 																	const n = parseInt(v, 10);
 																	setCompressMaxTokens(n);
 																	if (typeof window !== "undefined")
-																		localStorage.setItem(
+																		(typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))(
 																			"context-compress-max-tokens",
 																			String(n),
 																		);
@@ -1272,7 +1272,7 @@ ${fullChapterContext ? `\n=== 当前章节内容 ===\n${fullChapterContext}\n` :
 																onChange={(e) => {
 																	setCompressPersona(e.target.value);
 																	if (typeof window !== "undefined")
-																		localStorage.setItem(
+																		(typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))(
 																			"context-compress-persona",
 																			e.target.value,
 																		);
@@ -1287,7 +1287,7 @@ ${fullChapterContext ? `\n=== 当前章节内容 ===\n${fullChapterContext}\n` :
 																onChange={(e) => {
 																	setCompressPrompt(e.target.value);
 																	if (typeof window !== "undefined")
-																		localStorage.setItem(
+																		(typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))(
 																			"context-compress-prompt",
 																			e.target.value,
 																		);
@@ -1304,7 +1304,7 @@ ${fullChapterContext ? `\n=== 当前章节内容 ===\n${fullChapterContext}\n` :
 															onCheckedChange={(v) => {
 																setUseCompressedContext(!!v);
 																if (typeof window !== "undefined")
-																	localStorage.setItem(
+																	(typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))(
 																		"context-compress-use",
 																		v ? "1" : "0",
 																	);

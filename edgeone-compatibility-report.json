@@ -1,0 +1,108 @@
+{
+  "timestamp": "2025-10-06T13:34:15.637Z",
+  "platform": "EdgeOne",
+  "compatibility": {
+    "issues": [
+      {
+        "file": "src/app/bookstore/page.tsx",
+        "fix": "localStorage服务端访问",
+        "matches": 2,
+        "description": "添加localStorage的服务端兼容检查"
+      },
+      {
+        "file": "src/components/ChapterManager.tsx",
+        "fix": "localStorage服务端访问",
+        "matches": 6,
+        "description": "添加localStorage的服务端兼容检查"
+      },
+      {
+        "file": "src/components/CharacterCardManager.tsx",
+        "fix": "localStorage服务端访问",
+        "matches": 2,
+        "description": "添加localStorage的服务端兼容检查"
+      },
+      {
+        "file": "src/components/DeconstructOutline.tsx",
+        "fix": "localStorage服务端访问",
+        "matches": 7,
+        "description": "添加localStorage的服务端兼容检查"
+      },
+      {
+        "file": "src/components/Editor.tsx",
+        "fix": "localStorage服务端访问",
+        "matches": 17,
+        "description": "添加localStorage的服务端兼容检查"
+      },
+      {
+        "file": "src/hooks/useLocalStorage.ts",
+        "fix": "localStorage服务端访问",
+        "matches": 2,
+        "description": "添加localStorage的服务端兼容检查"
+      },
+      {
+        "file": "src/lib/ai-client.ts",
+        "fix": "localStorage服务端访问",
+        "matches": 6,
+        "description": "添加localStorage的服务端兼容检查"
+      },
+      {
+        "file": "src/lib/client-database.ts",
+        "fix": "localStorage服务端访问",
+        "matches": 4,
+        "description": "添加localStorage的服务端兼容检查"
+      },
+      {
+        "file": "src/lib/community-remote.ts",
+        "fix": "localStorage服务端访问",
+        "matches": 5,
+        "description": "添加localStorage的服务端兼容检查"
+      },
+      {
+        "file": "src/lib/gemini-client.ts",
+        "fix": "localStorage服务端访问",
+        "matches": 7,
+        "description": "添加localStorage的服务端兼容检查"
+      },
+      {
+        "file": "src/lib/migrate-ai-config.ts",
+        "fix": "localStorage服务端访问",
+        "matches": 15,
+        "description": "添加localStorage的服务端兼容检查"
+      },
+      {
+        "file": "src/lib/proxy-fetch-edge.ts",
+        "fix": "localStorage服务端访问",
+        "matches": 2,
+        "description": "添加localStorage的服务端兼容检查"
+      }
+    ],
+    "nextConfig": false,
+    "dependencies": false,
+    "files": {
+      "existingFiles": [
+        {
+          "path": "src/lib/client-database.ts",
+          "description": "EdgeOne客户端数据库存储"
+        },
+        {
+          "path": "src/lib/edge-deployment-utils.ts",
+          "description": "EdgeOne部署工具"
+        },
+        {
+          "path": "src/app/api/book-sources/route.ts",
+          "description": "EdgeOne兼容的书源API"
+        },
+        {
+          "path": "src/app/api/proxy-fetch/route.ts",
+          "description": "EdgeOne代理请求API"
+        }
+      ],
+      "missingFiles": []
+    }
+  },
+  "recommendations": [
+    "运行自动修复以解决兼容性问题",
+    "更新Next.js配置以支持EdgeOne",
+    "检查并更新有问题的依赖"
+  ]
+}

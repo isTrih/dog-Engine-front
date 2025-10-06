@@ -1,0 +1,104 @@
+{
+  "timestamp": "2025-10-06T13:30:47.027Z",
+  "system": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "nodeVersion": "v22.18.0",
+    "npmVersion": "10.9.3",
+    "isCI": false,
+    "hasDocker": true,
+    "hasGit": true
+  },
+  "platforms": {
+    "vercel": {
+      "detected": false,
+      "confidence": 0,
+      "evidence": []
+    },
+    "netlify": {
+      "detected": false,
+      "confidence": 0,
+      "evidence": []
+    },
+    "cloudflare": {
+      "detected": false,
+      "confidence": 0,
+      "evidence": []
+    },
+    "edgeone": {
+      "detected": true,
+      "confidence": 60,
+      "evidence": [
+        "edgeone.config.js配置文件",
+        "edge-config.json配置文件",
+        "package.json中的edgeone脚本"
+      ]
+    },
+    "railway": {
+      "detected": false,
+      "confidence": 0,
+      "evidence": []
+    },
+    "render": {
+      "detected": false,
+      "confidence": 0,
+      "evidence": []
+    }
+  },
+  "project": {
+    "hasNextConfig": true,
+    "hasEdgeConfig": true,
+    "hasEnvFile": false,
+    "hasTailwind": true,
+    "hasTypeScript": true,
+    "framework": "next.js",
+    "buildTool": "default",
+    "dependencies": {
+      "total": 55,
+      "edgeCompatible": 36,
+      "problematic": [
+        "https-proxy-agent",
+        "vm2"
+      ]
+    }
+  },
+  "recommendations": [
+    {
+      "type": "platform",
+      "priority": "info",
+      "title": "检测到主要平台: edgeone",
+      "description": "置信度: 60%",
+      "actions": [
+        "优化 edgeone 配置以获得最佳性能"
+      ]
+    },
+    {
+      "type": "dependencies",
+      "priority": "high",
+      "title": "发现有问题的依赖",
+      "description": "https-proxy-agent, vm2 可能不兼容边缘环境",
+      "actions": [
+        "运行 npm run edgeone:fix 修复兼容性问题",
+        "考虑使用边缘兼容的替代方案"
+      ]
+    }
+  ],
+  "configurations": [
+    {
+      "platform": "generic",
+      "configured": true
+    }
+  ],
+  "summary": {
+    "detectedPlatforms": [
+      {
+        "name": "edgeone",
+        "confidence": 60
+      }
+    ],
+    "configuredPlatforms": [
+      "generic"
+    ],
+    "criticalIssues": 1
+  }
+}

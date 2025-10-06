@@ -110,7 +110,7 @@ export default function CharacterCardManager({ characters, setCharacters, chapte
           .trim();
         const LIMIT = (() => {
           if (typeof window === 'undefined') return 12000;
-          const val = parseInt(localStorage.getItem('ai-extract-char-limit') || '12000', 10);
+          const val = parseInt((typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))('ai-extract-char-limit') || '12000', 10);
           return Number.isFinite(val) && val > 2000 ? val : 12000;
         })();
         joined = compact.length > LIMIT ? compact.slice(0, LIMIT) : compact;
@@ -126,7 +126,7 @@ export default function CharacterCardManager({ characters, setCharacters, chapte
 
       const isDebug = () => {
         if (typeof window === 'undefined') return false;
-        const v = localStorage.getItem('gemini-debug');
+        const v = (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))('gemini-debug');
         return v === '1' || v === 'true' || v === 'on';
       };
       if (isDebug()) {

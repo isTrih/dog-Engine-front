@@ -1,0 +1,260 @@
+{
+  "name": "dog-engine-front-edge",
+  "version": "1.0.0",
+  "description": "边缘部署配置 - 支持EdgeOne、Vercel、Cloudflare Workers等平台",
+  "edge": {
+    "runtime": "edge",
+    "regions": ["all"],
+    "memory": 128,
+    "timeout": 30
+  },
+  "features": {
+    "storageAdapter": {
+      "enabled": true,
+      "fallback": "memory",
+      "adapters": {
+        "browser": {
+          "type": "localStorage",
+          "key": "book-sources-data"
+        },
+        "edge": {
+          "type": "api",
+          "endpoint": "/api/book-sources"
+        },
+        "cloudflare": {
+          "type": "kv",
+          "binding": "BOOK_SOURCES_KV"
+        },
+        "vercel": {
+          "type": "kv",
+          "store": "@vercel/kv"
+        }
+      }
+    },
+    "proxyAdapter": {
+      "enabled": true,
+      "fallback": "direct",
+      "adapters": {
+        "browser": {
+          "type": "api",
+          "endpoint": "/api/proxy-fetch"
+        },
+        "edge": {
+          "type": "direct",
+          "timeout": 30000,
+          "retries": 2
+        },
+        "cors": {
+          "type": "cors-proxy",
+          "services": [
+            "https://cors-anywhere.herokuapp.com/",
+            "https://api.allorigins.win/raw?url="
+          ]
+        }
+      }
+    },
+    "aiClient": {
+      "enabled": true,
+      "localStorage": true,
+      "providers": [
+        "siliconflow",
+        "openai",
+        "zhipu",
+        "moonshot"
+      ]
+    },
+    "bookSources": {
+      "enabled": true,
+      "maxSources": 1000,
+      "validation": true,
+      "backup": true
+    }
+  },
+  "compatibility": {
+    "edgeone": {
+      "supported": true,
+      "features": ["proxy", "storage", "ai"],
+      "limitations": [
+        "no-file-system",
+        "no-node-modules",
+        "limited-memory"
+      ],
+      "workarounds": {
+        "fileSystem": "use-api-storage",
+        "nodeModules": "use-web-apis",
+        "memory": "use-streaming"
+      }
+    },
+    "vercel": {
+      "supported": true,
+      "runtime": "edge",
+      "features": ["proxy", "kv-storage", "ai"],
+      "config": {
+        "memory": 128,
+        "timeout": 30,
+        "regions": ["all"]
+      }
+    },
+    "cloudflare": {
+      "supported": true,
+      "runtime": "workerd",
+      "features": ["proxy", "kv-storage", "ai", "durable-objects"],
+      "bindings": {
+        "BOOK_SOURCES_KV": "kv_namespace",
+        "PROXY_CACHE": "cache_api"
+      }
+    },
+    "netlify": {
+      "supported": true,
+      "runtime": "deno",
+      "features": ["proxy", "storage", "ai"],
+      "functions": {
+        "edge": true,
+        "streaming": true
+      }
+    }
+  },
+  "security": {
+    "cors": {
+      "enabled": true,
+      "origins": ["*"],
+      "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      "headers": ["Content-Type", "Authorization"]
+    },
+    "urlValidation": {
+      "enabled": true,
+      "allowedProtocols": ["http", "https"],
+      "blockedHosts": [
+        "localhost",
+        "127.0.0.1",
+        "0.0.0.0",
+        "::1",
+        "169.254.169.254",
+        "metadata.google.internal"
+      ],
+      "blockedNetworks": [
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16"
+      ]
+    },
+    "headers": {
+      "removeUnsafe": true,
+      "addSecurity": true,
+      "whitelist": [
+        "content-type",
+        "authorization",
+        "user-agent",
+        "referer",
+        "origin"
+      ]
+    }
+  },
+  "performance": {
+    "caching": {
+      "enabled": true,
+      "ttl": 3600,
+      "strategies": {
+        "bookSources": "stale-while-revalidate",
+        "proxy": "cache-first",
+        "ai": "no-cache"
+      }
+    },
+    "compression": {
+      "enabled": true,
+      "algorithms": ["gzip", "brotli"]
+    },
+    "streaming": {
+      "enabled": true,
+      "chunkSize": 8192
+    }
+  },
+  "monitoring": {
+    "logging": {
+      "level": "info",
+      "structured": true,
+      "fields": ["timestamp", "level", "message", "runtime", "region"]
+    },
+    "metrics": {
+      "enabled": true,
+      "collect": ["requests", "errors", "latency", "memory"]
+    },
+    "tracing": {
+      "enabled": false,
+      "sampler": 0.1
+    }
+  },
+  "fallbacks": {
+    "storage": {
+      "primary": "edge-api",
+      "secondary": "browser-localStorage",
+      "tertiary": "memory"
+    },
+    "proxy": {
+      "primary": "direct",
+      "secondary": "cors-proxy",
+      "tertiary": "api-proxy"
+    },
+    "ai": {
+      "primary": "configured-provider",
+      "secondary": "fallback-provider",
+      "tertiary": "mock-response"
+    }
+  },
+  "migration": {
+    "fromLegacy": {
+      "enabled": true,
+      "geminiToAI": true,
+      "fileSystemToAPI": true,
+      "proxyToEdge": true
+    },
+    "dataTransformation": {
+      "bookSources": "preserve-format",
+      "aiConfig": "upgrade-providers",
+      "userSettings": "migrate-keys"
+    }
+  },
+  "testing": {
+    "healthCheck": {
+      "endpoints": [
+        "/api/book-sources",
+        "/api/proxy-fetch",
+        "/api/test-proxy"
+      ],
+      "timeout": 5000
+    },
+    "integration": {
+      "aiProviders": true,
+      "bookSources": true,
+      "proxyServices": true
+    }
+  },
+  "deployment": {
+    "environments": {
+      "development": {
+        "features": ["debug", "hot-reload", "mock-data"]
+      },
+      "staging": {
+        "features": ["logging", "monitoring", "test-data"]
+      },
+      "production": {
+        "features": ["optimized", "caching", "security"]
+      }
+    },
+    "buildCommands": {
+      "vercel": "npm run build",
+      "cloudflare": "npm run build && wrangler publish",
+      "netlify": "npm run build"
+    },
+    "environmentVariables": {
+      "required": [],
+      "optional": [
+        "EDGE_RUNTIME",
+        "CLOUDFLARE_WORKERS",
+        "VERCEL_ENV",
+        "BOOK_SOURCES_KV",
+        "DATABASE_URL"
+      ]
+    }
+  }
+}

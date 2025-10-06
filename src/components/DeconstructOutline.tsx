@@ -62,12 +62,12 @@ export function DeconstructOutline({
 	const DEFAULT_PROMPT_TEMPLATE = `请分析以下章节内容，提取出详细的写作细纲。包括：\n1. 主要情节发展\n2. 关键人物动作和对话\n3. 场景描写要点\n4. 情绪氛围营造\n5. 冲突和转折点`;
 	const [persona, setPersona] = useState<string>(() => {
 		if (typeof window === "undefined") return DEFAULT_PERSONA;
-		return localStorage.getItem("deconstruct-persona") || DEFAULT_PERSONA;
+		return (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("deconstruct-persona") || DEFAULT_PERSONA;
 	});
 	const [promptTemplate, setPromptTemplate] = useState<string>(() => {
 		if (typeof window === "undefined") return DEFAULT_PROMPT_TEMPLATE;
 		return (
-			localStorage.getItem("deconstruct-prompt-template") ||
+			(typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("deconstruct-prompt-template") ||
 			DEFAULT_PROMPT_TEMPLATE
 		);
 	});
@@ -82,7 +82,7 @@ export function DeconstructOutline({
 	const [selectedModel, setSelectedModel] = useState("");
 	const [maxTokens, setMaxTokens] = useState<number>(() => {
 		if (typeof window === "undefined") return 2048;
-		const saved = localStorage.getItem("deconstruct-max-tokens");
+		const saved = (typeof window !== 'undefined' ? localStorage.getItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("deconstruct-max-tokens");
 		const n = saved ? parseInt(saved, 10) : 2048;
 		return Number.isFinite(n) && n > 256 ? n : 2048;
 	});
@@ -216,7 +216,7 @@ export function DeconstructOutline({
 	};
 
 	const applyToEditor = () => {
-		localStorage.setItem(DECONSTRUCT_OUTLINE_KEY, outline);
+		(typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))(DECONSTRUCT_OUTLINE_KEY, outline);
 		toast({
 			title: "操作成功",
 			description: "细纲已保存，请到写作页面粘贴使用。",
@@ -228,13 +228,13 @@ export function DeconstructOutline({
 	const persistPersona = (text: string) => {
 		setPersona(text);
 		if (typeof window !== "undefined") {
-			localStorage.setItem("deconstruct-persona", text);
+			(typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("deconstruct-persona", text);
 		}
 	};
 	const persistPromptTemplate = (text: string) => {
 		setPromptTemplate(text);
 		if (typeof window !== "undefined") {
-			localStorage.setItem("deconstruct-prompt-template", text);
+			(typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))("deconstruct-prompt-template", text);
 		}
 	};
 
@@ -338,7 +338,7 @@ export function DeconstructOutline({
 											const n = parseInt(v, 10);
 											setMaxTokens(n);
 											if (typeof window !== "undefined") {
-												localStorage.setItem(
+												(typeof window !== 'undefined' ? localStorage.setItem : (() => { console.warn('EdgeOne兼容: 服务端不支持localStorage'); return null; }))(
 													"deconstruct-max-tokens",
 													String(n),
 												);

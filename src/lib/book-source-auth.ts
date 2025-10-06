@@ -7,7 +7,7 @@ export interface BookSourceAuth {
   tokens?: Record<string, string>;  // optional key-value for custom tokens
 }
 
-const isVercel = !!process.env.VERCEL;
+const isVercel = !!(process.env?.VERCEL || '');
 const dataFilePath = isVercel
   ? path.join('/tmp', 'book_source_auth.json')
   : path.join(process.cwd(), 'book_source_auth.json');
