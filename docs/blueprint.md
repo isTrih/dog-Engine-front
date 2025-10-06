@@ -1,4 +1,4 @@
-# **App Name**: 狗狗码字
+# **App Name**: 正经写作
 
 ## Core Features:
 
