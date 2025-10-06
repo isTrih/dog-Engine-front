@@ -67,11 +67,13 @@ export interface BookstoreCategory {
 export interface BookstoreChapter {
     title: string;
     url: string;
+    intro?: string;
 }
 
 export interface BookstoreBookDetail extends Omit<BookstoreBook, 'sourceId'> {
     description: string;
     chapters: BookstoreChapter[];
+    extraInfo?: Record<string, string>; // 额外的动态字段（评分、标签、主角等）
 }
 
 export interface BookstoreChapterContent {

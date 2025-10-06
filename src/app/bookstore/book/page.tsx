@@ -186,7 +186,24 @@ function BookDetail() {
                           <AccordionItem value="description">
                             <AccordionTrigger>简介</AccordionTrigger>
                             <AccordionContent>
-                              <p className="text-foreground/80 whitespace-pre-wrap">{book.description || "暂无简介"}</p>
+                              <div 
+                                className="text-foreground/80 prose prose-sm max-w-none dark:prose-invert [&>br]:my-1 [&>p]:my-2"
+                                dangerouslySetInnerHTML={{ __html: book.description || "暂无简介" }}
+                              />
+                              
+                              {/* 动态展示额外信息 */}
+                              {book.extraInfo && Object.keys(book.extraInfo).length > 0 && (
+                                <div className="mt-4 pt-4 border-t border-border/50">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                                    {Object.entries(book.extraInfo).map(([key, value]) => (
+                                      <div key={key} className="flex gap-2">
+                                        <span className="font-medium text-muted-foreground">{key}：</span>
+                                        <span className="text-foreground">{value}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </AccordionContent>
                           </AccordionItem>
                           <AccordionItem value="chapters">
@@ -195,11 +212,18 @@ function BookDetail() {
                                 {(() => {
                                   const safeChapters = (book.chapters || []).filter((ch) => typeof ch?.url === 'string' && ch.url.trim().length > 0);
                                   return (
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2 max-h-96 overflow-y-auto">
+                                    <div className="space-y-1 max-h-96 overflow-y-auto">
                                       {safeChapters.map((chapter, index) => (
                                         <Link key={`${index}-${chapter.url}`} href={`/bookstore/read?url=${encodeURIComponent(chapter.url)}&sourceId=${sourceId}`} passHref>
-                                            <div className="text-sm truncate py-1 hover:text-primary transition-colors">
-                                                {chapter.title}
+                                            <div className="group hover:bg-accent/50 p-2 rounded-md transition-colors">
+                                                <div className="text-sm font-medium group-hover:text-primary transition-colors">
+                                                    {chapter.title}
+                                                </div>
+                                                {chapter.intro && (
+                                                    <div className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                                        {chapter.intro}
+                                                    </div>
+                                                )}
                                             </div>
                                         </Link>
                                       ))}

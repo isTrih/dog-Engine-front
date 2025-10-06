@@ -2,7 +2,7 @@ import { BookList } from '@/components/BookList';
 import Header from '@/components/Header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { FileScan, Library, Users, Settings } from 'lucide-react';
+import { FileScan, Library, Users, Settings, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 
 export default function Home() {
@@ -24,6 +24,22 @@ export default function Home() {
               <CardContent>
                 <Link href="/bookstore" passHref>
                   <Button variant="outline">进入书城</Button>
+                </Link>
+              </CardContent>
+          </Card>
+          <Card className="bg-card/50 border-dashed">
+             <CardHeader>
+                <CardTitle className="font-headline flex items-center gap-2">
+                  <Sparkles className="w-6 h-6 text-primary" />
+                  网文天赋测试
+                </CardTitle>
+                <CardDescription>
+                  一套轻量问答，实时扣分显示，测测你的网文创作天赋。
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Link href="/talent-test" passHref>
+                  <Button variant="outline">开始测试</Button>
                 </Link>
               </CardContent>
           </Card>

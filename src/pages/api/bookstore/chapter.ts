@@ -3,6 +3,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import type { BookstoreChapterContent } from '@/lib/types';
 import { getBookSources, parseWithRules, evaluateJs } from '@/lib/book-source-utils';
 import { getCookieForUrl } from '@/lib/book-source-auth';
+import { parseUrlWithOptions, buildRequestInit } from '@/lib/parse-url-with-options';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     const { url, sourceId } = req.query;
@@ -73,30 +74,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             console.log(`${logPrefix} Evaluated JS URL to: ${chapterUrl}`);
         }
 
-        if (chapterUrl.includes(',')) {
-            const parts = chapterUrl.split(',');
-            chapterUrl = parts[0];
-             if (parts[1]) {
-                try {
-                    const options = JSON.parse(parts[1]);
-                    requestOptions = {
-                        method: options.method || 'GET',
-                        headers: { ...requestOptions.headers, ...options.headers },
-                        body: options.body
-                    };
-                } catch(e) {
-                     console.error(`${logPrefix} Failed to parse request options from chapter URL:`, e);
-                }
-            }
-        }
+        // 解析Legado格式的URL和请求配置 (URL,{options})
+        const parsedUrl = parseUrlWithOptions(chapterUrl);
+        chapterUrl = parsedUrl.url;
+        console.log(`${logPrefix} Parsed request options:`, { method: parsedUrl.method, hasBody: !!parsedUrl.body, extraHeaders: Object.keys(parsedUrl.headers || {}) });
         
         console.log(`${logPrefix} Fetching chapter content from: ${chapterUrl}`);
         const cookieHeader = await getCookieForUrl(source.id, chapterUrl);
         const mergedHeaders: Record<string, string> = {
-            ...(requestOptions.headers as any),
+            ...requestHeaders,
+            ...(parsedUrl.headers || {}), // URL中指定的headers优先级更高
             ...(cookieHeader ? { cookie: cookieHeader } : {}),
         };
-        const response = await fetch(chapterUrl, { ...requestOptions, headers: mergedHeaders });
+        
+        // 构建完整的请求配置
+        requestOptions = buildRequestInit(parsedUrl, mergedHeaders);
+        console.log(`${logPrefix} Final request config:`, { method: requestOptions.method, headers: Object.keys(requestOptions.headers as any), hasBody: !!requestOptions.body });
+        
+        const response = await fetch(chapterUrl, requestOptions);
         console.log(`${logPrefix} Fetched with status: ${response.status}`);
         if (!response.ok) {
             throw new Error(`Failed to fetch chapter content from ${chapterUrl}. Status: ${response.status}`);
@@ -112,9 +107,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             // Not JSON, it's fine
         }
 
+        // 为书源JS提供 Legado 期望的 baseUrl：base64(queryString)
+        let evalBaseUrl = chapterUrl;
+        try {
+            const u = new URL(chapterUrl);
+            const qs = u.searchParams.toString();
+            if (qs) {
+                evalBaseUrl = Buffer.from(qs, 'utf-8').toString('base64');
+            }
+        } catch {}
+
         if (contentRule.content.startsWith('<js>')) {
-             console.log(`${logPrefix} Evaluating content rule with JS.`);
-             content = await evaluateJs(contentRule.content, { source, result: html });
+             // console.log(`${logPrefix} Evaluating content rule with JS.`);
+             content = await evaluateJs(contentRule.content, { source, result: html, baseUrl: evalBaseUrl });
+
+             // Fallback：如果 JS 没产出正文，尝试直接从接口 JSON 取 content 字段
+             if (!content || content.trim().length === 0) {
+                try {
+                    const asJson = typeof contentContainer === 'string' ? JSON.parse(contentContainer as any) : contentContainer;
+                    const direct = (asJson && (asJson.content || asJson.data?.content)) || '';
+                    if (direct && typeof direct === 'string') {
+                        // console.log(`${logPrefix} JS为空，使用接口JSON中的 content 字段`);
+                        content = direct;
+                    }
+                } catch {}
+             }
              try {
                 // If the result of JS is a JSON string, parse it.
                 const parsedContent = JSON.parse(content);
@@ -134,7 +151,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
              content = value || '';
         } else {
             console.log(`${logPrefix} Evaluating content rule with CSS selector: ${contentRule.content}`);
-            content = parseWithRules(html, contentRule.content, chapterUrl);
+            content = await parseWithRules(html, contentRule.content, chapterUrl, source);
         }
 
         // 替换/清洗
@@ -177,18 +194,62 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             } catch {}
         }
         
-        console.log(`${logPrefix} Successfully parsed content.`);
+        // console.log(`${logPrefix} Successfully parsed content.`);
 
-        const chapterTitle = parseWithRules(html, contentRule.chapterName, chapterUrl) || parseWithRules(html, 'title', chapterUrl);
+        // 章节标题：优先从 JSON 获取，然后使用规则，最后退回 HTML <title>
+        let chapterTitle = '';
+        
+        // 1. 优先尝试从 JSON 直接获取章节名
+        try {
+            const obj = typeof contentContainer === 'string' ? JSON.parse(contentContainer as any) : contentContainer;
+            chapterTitle = (obj && (obj.chaptername || obj.chapterName || obj.title || obj.data?.chaptername)) || '';
+            console.log(`${logPrefix} JSON chapterTitle:`, chapterTitle || '(empty)');
+        } catch (e: any) {
+            console.warn(`${logPrefix} JSON parse failed:`, e?.message);
+        }
+        
+        // 2. 如果有 chapterName 规则，使用规则解析
+        if (!chapterTitle && contentRule.chapterName) {
+            if (contentRule.chapterName.startsWith('<js>')) {
+                console.log(`${logPrefix} Evaluating chapterName JS...`);
+                try {
+                    chapterTitle = await evaluateJs(contentRule.chapterName, { 
+                        source, 
+                        result: contentContainer,
+                        baseUrl: evalBaseUrl 
+                    });
+                } catch (e: any) {
+                    console.warn(`${logPrefix} ChapterName JS failed:`, e?.message || e);
+                }
+            } else {
+                try {
+                    chapterTitle = await parseWithRules(contentContainer, contentRule.chapterName, chapterUrl, source);
+                } catch {}
+            }
+        }
+        
+        // 3. 最后退回 HTML <title>
+        if (!chapterTitle) {
+            console.log(`${logPrefix} No title found, using HTML <title> fallback...`);
+            chapterTitle = await parseWithRules(html, 'title', chapterUrl, source);
+        }
+        
+        console.log(`${logPrefix} Final chapterTitle:`, chapterTitle);
         
         // 处理下一页链接：支持 JS/CSS/JSON 规则
         let nextUrl: string | undefined = undefined;
         if (contentRule.nextContentUrl) {
             if (contentRule.nextContentUrl.startsWith('<js>')) {
-                nextUrl = await evaluateJs(contentRule.nextContentUrl, { source, result: html });
+                let evalBaseUrl2 = chapterUrl;
+                try {
+                    const u2 = new URL(chapterUrl);
+                    const qs2 = u2.searchParams.toString();
+                    if (qs2) evalBaseUrl2 = Buffer.from(qs2, 'utf-8').toString('base64');
+                } catch {}
+                nextUrl = await evaluateJs(contentRule.nextContentUrl, { source, result: html, baseUrl: evalBaseUrl2 });
             } else {
                 // 使用常规规则解析（支持 id./class./text.@href 等）
-                nextUrl = parseWithRules(html, contentRule.nextContentUrl, chapterUrl);
+                nextUrl = await parseWithRules(html, contentRule.nextContentUrl, chapterUrl, source);
             }
         }
 
@@ -199,7 +260,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             prevChapterUrl: undefined, // Note: prevChapterUrl is not part of the spec, would require more logic
         };
         
-        console.log(`${logPrefix} Returning chapter: ${chapterContent.title}`);
+        // console.log(`${logPrefix} Returning chapter: ${chapterContent.title}`);
         res.status(200).json({ success: true, chapter: chapterContent });
 
     } catch (error: any) {

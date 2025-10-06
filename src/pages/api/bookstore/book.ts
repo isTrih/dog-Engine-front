@@ -4,6 +4,7 @@ import type { BookstoreBookDetail } from '@/lib/types';
 import { decodeCoverIfNeeded } from '@/lib/book-source-utils';
 import { getCookieForUrl } from '@/lib/book-source-auth';
 import { rewriteViaProxyBase } from '@/lib/proxy-fetch';
+import { parseUrlWithOptions, buildRequestInit } from '@/lib/parse-url-with-options';
 import * as cheerio from 'cheerio';
 import { getBookSources, parseWithRules, parseListWithRules, evaluateJs, parseRuleWithCssJs, runJsTransformer } from '@/lib/book-source-utils';
 
@@ -39,33 +40,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return res.status(501).json({ success: false, error: `Book source '${source.name}' is missing parsing rules for book details or table of contents.` });
         }
         
-        let detailUrl = url;
-        let requestOptions: RequestInit = { headers: source.header ? JSON.parse(source.header) : undefined };
-
-        if (url.includes(',')) { // Complex URL with options
-            const parts = url.split(',');
-            detailUrl = parts[0];
-            if (parts[1]) {
-                try {
-                    const options = JSON.parse(parts[1]);
-                    requestOptions = {
-                        method: options.method || 'GET',
-                        headers: { ...requestOptions.headers, ...options.headers },
-                        body: options.body
-                    };
-                } catch(e) {
-                    console.error(`${logPrefix} Failed to parse request options from URL:`, e);
-                }
+        // 解析Legado格式的URL和请求配置 (URL,{options})
+        const parsedUrl = parseUrlWithOptions(url);
+        let detailUrl = parsedUrl.url;
+        console.log(`${logPrefix} Parsed request options:`, { method: parsedUrl.method, hasBody: !!parsedUrl.body, extraHeaders: Object.keys(parsedUrl.headers || {}) });
+        
+        let baseHeaders: Record<string, string> = {};
+        if (source.header) {
+            try {
+                baseHeaders = JSON.parse(source.header);
+            } catch (e) {
+                console.warn(`${logPrefix} Failed to parse source.header`);
             }
         }
         
         // Inject cookies if available for this source and URL
         const cookieHeader = await getCookieForUrl(source.id, detailUrl);
         const mergedHeaders: Record<string, string> = {
-            ...(requestOptions.headers as any),
+            ...baseHeaders,
+            ...(parsedUrl.headers || {}), // URL中指定的headers优先级更高
             ...(cookieHeader ? { cookie: cookieHeader } : {}),
         };
-        const response = await fetch(rewriteViaProxyBase(detailUrl, source.proxyBase), { ...requestOptions, headers: mergedHeaders });
+        
+        // 构建完整的请求配置
+        const requestOptions = buildRequestInit(parsedUrl, mergedHeaders);
+        console.log(`${logPrefix} Final request config:`, { method: requestOptions.method, headers: Object.keys(requestOptions.headers as any), hasBody: !!requestOptions.body });
+        
+        const response = await fetch(rewriteViaProxyBase(detailUrl, source.proxyBase), requestOptions);
         console.log(`${logPrefix} Fetched with status: ${response.status}`);
         if (!response.ok) {
             throw new Error(`Failed to fetch book detail from ${detailUrl}. Status: ${response.status}`);
@@ -99,7 +100,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             if (jsIndex > -1) {
                 // 先提取CSS选择器部分的值
                 const selectorPart = tocUrlRaw.substring(0, jsIndex).trim();
-                const extractedUrl = parseWithRules(html, selectorPart, detailUrl);
+                const extractedUrl = await parseWithRules(html, selectorPart, detailUrl);
                 
                 // 然后用JS代码处理，注意：JS中的baseUrl指的是当前页面URL
                 const jsPart = '<js>\nvar baseUrl = "' + detailUrl + '";\n' + tocUrlRaw.substring(jsIndex + 4) + '\n</js>';
@@ -131,7 +132,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         let tocResponseUrl = detailUrl;
 
         if (evaluatedTocUrl && evaluatedTocUrl !== detailUrl) {
-            let tocRequestOptions: RequestInit = { headers: source.header ? JSON.parse(source.header) : undefined };
+            // 处理 source.header（可能包含JS代码）
+            let tocHeaders: Record<string, string> = {};
+            if (source.header) {
+                try {
+                    if (source.header.includes('<js>')) {
+                        console.log(`${logPrefix} Header contains JavaScript code, evaluating...`);
+                        const headerResult = await evaluateJs(source.header, { source });
+                        tocHeaders = JSON.parse(headerResult);
+                        console.log(`${logPrefix} Successfully evaluated header JS:`, tocHeaders);
+                    } else {
+                        tocHeaders = JSON.parse(source.header);
+                    }
+                } catch (e) {
+                    console.warn(`${logPrefix} Failed to parse header:`, e);
+                }
+            }
+            
+            let tocRequestOptions: RequestInit = { headers: tocHeaders };
             let finalTocUrl = evaluatedTocUrl;
 
             // 处理URL,options格式（大灰狼书源用）
@@ -199,16 +217,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 chapters = chapterListResult.map((item: any) => ({
                     title: item[tocRule.chapterName || 'text'] || item.text,
                     url: item[tocRule.chapterUrl || 'href'] || item.href,
+                    intro: item.chapterintro || item.intro || item.desc || ''
                 }));
             } else {
                 console.warn(`${logPrefix} @css/@js解析器未返回数组`);
             }
         } else {
-            // 使用常规解析器
-            chapters = parseListWithRules(tocHtml, tocRule.chapterList, {
+            // 使用常规解析器，先获取原始数据
+            const rawChapters = await parseListWithRules(tocHtml, tocRule.chapterList, {
                 title: tocRule.chapterName,
                 url: tocRule.chapterUrl,
-            }, tocResponseUrl);
+                intro: '$.chapterintro||$.intro||$.desc',
+                _rawData: '$.' // 保留原始章节对象
+            }, tocResponseUrl, source);
+            
+            // 处理章节数据，确保简介被提取
+            chapters = rawChapters.map((ch: any, idx: number) => {
+                const intro = ch.intro || (ch._rawData?.chapterintro) || (ch._rawData?.intro) || '';
+                if (idx < 3) {
+                    console.log(`${logPrefix} 章节 ${idx + 1} 简介提取:`, intro ? intro.substring(0, 50) : '(无)');
+                }
+                return {
+                    title: ch.title,
+                    url: ch.url,
+                    intro: intro
+                };
+            });
         }
         
         chapters = await Promise.all(chapters.map(async (chapter) => {
@@ -252,9 +286,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const bookDataContainer = (initResult && typeof initResult === 'object') ? initResult : (bookInfoRule.init?.startsWith('$.') ? initResult : html);
 
         // 生成并清洗简介（支持HTML，去掉危险标签与属性）
-        const rawDescription = bookInfoRule.intro?.startsWith('<js>') 
-            ? await evaluateJs(bookInfoRule.intro, {source, result: initResult}) 
-            : parseWithRules(bookDataContainer, bookInfoRule.intro, detailUrl);
+        let rawDescription = '';
+        
+        try {
+            if (bookInfoRule.intro?.startsWith('<js>')) {
+                rawDescription = await evaluateJs(bookInfoRule.intro, { source, result: initResult, baseUrl: detailUrl });
+            } else {
+                rawDescription = await parseWithRules(bookDataContainer, bookInfoRule.intro, detailUrl, source);
+            }
+        } catch (e: any) {
+            console.warn(`${logPrefix} intro规则执行失败:`, e?.message || e);
+        }
+        
+        // Fallback: 如果intro规则失败或为空，尝试从JSON直接提取
+        if (!rawDescription || rawDescription.trim().length === 0) {
+            console.log(`${logPrefix} intro为空，尝试从JSON fallback...`);
+            try {
+                const jsonData = typeof initResult === 'object' ? initResult : JSON.parse(html);
+                // 尝试多种常见的简介字段名
+                rawDescription = (
+                    jsonData?.novelIntro || 
+                    jsonData?.novelIntroShort || 
+                    jsonData?.intro || 
+                    jsonData?.abstract || 
+                    jsonData?.description || 
+                    jsonData?.des || 
+                    jsonData?.summary || 
+                    ''
+                );
+                if (rawDescription) {
+                    console.log(`${logPrefix} JSON fallback成功，简介长度: ${rawDescription.length}`);
+                }
+            } catch (e: any) {
+                console.warn(`${logPrefix} JSON fallback失败:`, e?.message);
+            }
+        }
 
         const sanitizeIntroHtml = (input: string): string => {
             if (!input || typeof input !== 'string') return '';
@@ -290,7 +356,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         };
 
         // 书名主解析
-        let parsedTitle = parseWithRules(bookDataContainer, bookInfoRule.name, detailUrl);
+        let parsedTitle = await parseWithRules(bookDataContainer, bookInfoRule.name, detailUrl);
         if (!parsedTitle || parsedTitle.trim().length === 0) {
             try {
                 // 回退1：尝试从 <title> 提取（去站点名等杂项）
@@ -312,26 +378,63 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const parseField = async (rule?: string): Promise<string> => {
             if (!rule) return '';
             if (rule.startsWith('<js>')) {
-                try { return await evaluateJs(rule, { source, result: bookDataContainer }); } catch { return ''; }
+                try { return await evaluateJs(rule, { source, result: bookDataContainer, baseUrl: detailUrl }); } catch { return ''; }
             }
             const jsIndex = rule.indexOf('@js:');
             if (jsIndex > -1) {
                 const selectorPart = rule.substring(0, jsIndex).trim();
                 const jsSnippet = rule.substring(jsIndex + 4);
-                const baseValue = selectorPart ? parseWithRules(bookDataContainer, selectorPart, detailUrl) : '';
+                const baseValue = selectorPart ? await parseWithRules(bookDataContainer, selectorPart, detailUrl) : '';
                 try {
-                    return await runJsTransformer(jsSnippet, { source, result: baseValue });
+                    return await runJsTransformer(jsSnippet, { source, result: baseValue, baseUrl: detailUrl as any });
                 } catch {
                     return String(baseValue || '');
                 }
             }
-            return parseWithRules(bookDataContainer, rule, detailUrl);
+            return await parseWithRules(bookDataContainer, rule, detailUrl);
         };
 
         const resolvedAuthor = await parseField(bookInfoRule.author);
         const resolvedCover = await decodeCoverIfNeeded(await parseField(bookInfoRule.coverUrl), source) || await parseField(bookInfoRule.coverUrl);
         const resolvedKind = await parseField(bookInfoRule.kind);
         const resolvedLastChapter = await parseField(bookInfoRule.lastChapter);
+
+        // 提取额外信息：从initResult中自动提取所有有用的字段
+        const extraInfo: Record<string, string> = {};
+        if (typeof initResult === 'object' && initResult) {
+            // 定义可能有用的字段及其显示名称
+            const extraFieldMappings: Record<string, string> = {
+                'novelreview': '评分',
+                'pv': '评分',
+                'score': '评分',
+                'ranking': '排行',
+                'nutrition_novel': '营养值',
+                'comment_count': '评论数',
+                'novelStyle': '风格',
+                'novelTags': '标签',
+                'tags': '标签',
+                'protagonist': '主角',
+                'costar': '配角',
+                'other': '其他',
+                'mainview': '视角',
+                'novelbefavoritedcount': '收藏数',
+                'read_count': '阅读数',
+                'word_number': '字数',
+                'novelSize': '字数',
+                'novelSizeformat': '字数',
+                'leave': '请假条',
+                'leaveContent': '请假信息'
+            };
+            
+            for (const [fieldKey, displayName] of Object.entries(extraFieldMappings)) {
+                const value = (initResult as any)[fieldKey];
+                if (value && String(value).trim().length > 0 && String(value) !== 'undefined') {
+                    extraInfo[displayName] = String(value);
+                }
+            }
+            
+            // console.log(`${logPrefix} 提取到 ${Object.keys(extraInfo).length} 个额外字段:`, Object.keys(extraInfo).join(', '));
+        }
 
         const bookDetail: BookstoreBookDetail = {
             title: parsedTitle || '',
@@ -343,9 +446,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             detailUrl: detailUrl,
             // 对于无目录源（如番茄等），允许 chapters 为空数组
             chapters: chapters || [],
+            extraInfo: Object.keys(extraInfo).length > 0 ? extraInfo : undefined,
         };
         
-        console.log(`${logPrefix} Successfully parsed book detail: ${bookDetail.title}`);
+        // console.log(`${logPrefix} Successfully parsed book detail: ${bookDetail.title}`);
         res.status(200).json({ success: true, book: bookDetail });
 
     } catch (error: any) {

@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { parseUrlWithOptions, buildRequestInit } from '@/lib/parse-url-with-options';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
@@ -7,7 +8,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).send('Missing url');
     }
 
-    let targetUrl = url;
+    // 解析 Legado 风格的 URL,{options}
+    const parsed = parseUrlWithOptions(url);
+    let targetUrl = parsed.url;
     // 防止重复代理导致无限循环
     if (targetUrl.startsWith('/api/proxy-image')) {
       return res.status(400).send('Invalid url');
@@ -17,7 +20,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       try { return new URL(targetUrl).origin; } catch { return undefined; }
     })();
 
-    const headers: Record<string, string> = {
+    const baseHeaders: Record<string, string> = {
       'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36',
       // 常见防盗链：设置 Referer 为图片域名
       ...(origin ? { referer: origin } : {}),
@@ -25,7 +28,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       'accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8'
     };
 
-    const response = await fetch(targetUrl, { headers });
+    // 合并自 URL options 的自定义头
+    const requestInit = buildRequestInit(parsed, baseHeaders);
+
+    const response = await fetch(targetUrl, requestInit);
     if (!response.ok) {
       return res.status(response.status).send('Upstream error');
     }

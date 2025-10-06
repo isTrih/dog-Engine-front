@@ -86,8 +86,8 @@ function CategoryBooks() {
         
         return (
              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                {books.map(book => (
-                    <Card key={book.detailUrl} className="hover:shadow-md transition-shadow group relative">
+                {books.map((book, index) => (
+                    <Card key={book.detailUrl || `book-${index}`} className="hover:shadow-md transition-shadow group relative">
                          <div className="absolute top-2 left-2 z-10 transition-opacity">
                             <DeconstructOutline bookDetailUrl={book.detailUrl} sourceId={book.sourceId} />
                         </div>

@@ -34,6 +34,29 @@ async function fetchSources(): Promise<BookSource[]> {
 
 
 function BookCard({ book }: { book: BookstoreBook }) {
+  // 如果没有detailUrl，不显示链接
+  if (!book.detailUrl) {
+    return (
+      <Card className="flex flex-col opacity-50">
+        <CardContent className="p-0">
+          <div className="relative aspect-[3/4] w-full">
+            <Image
+              src={book.cover || `https://placehold.co/300x400.png`}
+              alt={book.title}
+              fill
+              className="object-cover rounded-t-lg"
+            />
+          </div>
+        </CardContent>
+        <div className="p-3 flex-grow flex flex-col">
+          <h3 className="text-sm font-bold line-clamp-1 font-headline">{book.title}</h3>
+          <p className="text-xs line-clamp-1 text-muted-foreground mt-1">{book.author}</p>
+          <p className="text-xs text-red-500 mt-1">URL解析失败</p>
+        </div>
+      </Card>
+    );
+  }
+  
   return (
     <Card className="flex flex-col hover:shadow-lg transition-shadow duration-200 group relative">
       <div className="absolute top-2 left-2 z-10 transition-opacity">

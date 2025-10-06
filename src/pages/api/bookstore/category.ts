@@ -4,6 +4,7 @@ import type { BookstoreBook, BookstoreCategory } from '@/lib/types';
 import { getBookSources, parseListWithRules, evaluateJs, decodeCoverIfNeeded } from '@/lib/book-source-utils';
 import { getCookieForUrl } from '@/lib/book-source-auth';
 import { rewriteViaProxyBase } from '@/lib/proxy-fetch';
+import { parseUrlWithOptions, buildRequestInit } from '@/lib/parse-url-with-options';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
     const { url, sourceId, exploreUrl, page = '1', mode } = req.query;
@@ -62,9 +63,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (fetchUrlOrJsonData.startsWith('http')) {
             // 处理模板占位（如 {{page-1}}、{{(page-1)*25}}、{{host()}}, {{source.xxx}} 等）
             let realUrl = await evaluateJs(fetchUrlOrJsonData, { source, page: parseInt(page as string) });
+            
+            // 解析Legado格式的URL和请求配置 (URL,{options})
+            const parsedUrl = parseUrlWithOptions(realUrl);
+            realUrl = parsedUrl.url;
             realUrl = rewriteViaProxyBase(realUrl, source.proxyBase);
             baseUrl = realUrl;
             console.log(`${logPrefix} Fetching URL: ${baseUrl}`);
+            console.log(`${logPrefix} Parsed request options:`, { method: parsedUrl.method, hasBody: !!parsedUrl.body, extraHeaders: Object.keys(parsedUrl.headers || {}) });
+            
             const cookieHeader = await getCookieForUrl(source.id, realUrl);
             let parsedHeaders: Record<string, string> = {};
             if (source.header) {
@@ -104,30 +111,52 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
                 ...(realUrlOrigin ? { Referer: realUrlOrigin } : {}),
                 ...parsedHeaders,
+                ...(parsedUrl.headers || {}), // URL中指定的headers优先级更高
                 ...(cookieHeader ? { cookie: cookieHeader } : {}),
             };
+            
+            // 构建完整的请求配置
+            const requestInit = buildRequestInit(parsedUrl, mergedHeaders);
+            // console.log(`${logPrefix} Final request config:`, { method: requestInit.method, headers: Object.keys(requestInit.headers as any), hasBody: !!requestInit.body });
+            
+            // 增强请求头，模拟真实浏览器
+            const enhancedInit: RequestInit = {
+                ...requestInit,
+                headers: {
+                    ...(requestInit.headers as any),
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Upgrade-Insecure-Requests': '1',
+                }
+            };
+            
             try {
-                const response = await fetch(realUrl, { headers: mergedHeaders });
-                console.log(`${logPrefix} Fetched with status: ${response.status}`);
+                const response = await fetch(realUrl, enhancedInit);
+                // console.log(`${logPrefix} Fetched with status: ${response.status}`);
                 if (!response.ok) {
                     throw new Error(`Failed to fetch category page from ${realUrl}. Status: ${response.status}`);
                 }
                 
                 const contentType = response.headers.get('content-type') || '';
-                console.log(`${logPrefix} Response content-type: ${contentType}`);
+                // console.log(`${logPrefix} Response content-type: ${contentType}`);
                 
                 if (contentType.includes('application/json')) {
                     // 如果返回的是JSON，直接解析
                     const jsonData = await response.json();
                     data = JSON.stringify(jsonData);
-                    console.log(`${logPrefix} Received JSON data, keys: ${Object.keys(jsonData).join(', ')}`);
+                    // console.log(`${logPrefix} Received JSON data, keys: ${Object.keys(jsonData).join(', ')}`);
                 } else {
                     // 否则作为文本处理
                     data = await response.text();
-                    console.log(`${logPrefix} Received text data, length: ${data.length}, starts with: ${data.substring(0, 100)}...`);
+                    // console.log(`${logPrefix} Received text data, length: ${data.length}, starts with: ${data.substring(0, 100)}...`);
                 }
             } catch (e: any) {
-                console.warn(`${logPrefix} Direct fetch failed (${e?.code || e?.message}), trying proxy agent...`);
+                console.warn(`${logPrefix} Direct fetch failed (${e?.code || e?.message}), error:`, e);
                 // 使用系统代理（HTTP(S)_PROXY）重试（回退实现：直接返回错误，不影响其他源）
                 try {
                     throw e;
@@ -161,7 +190,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
 
         if ((typeof mode === 'string' && mode.toLowerCase() === 'explore') || (!!exploreUrl && !mode)) {
-             const categoriesRaw = parseListWithRules(data, '$.', {
+             const categoriesRaw = await parseListWithRules(data, '$.', {
                 title: '$.title',
                 url: '$.url',
             }, baseUrl);
@@ -265,7 +294,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             
             let booksRaw: any[] = [];
             try {
-                booksRaw = parseListWithRules(processedData, findRule.bookList, {
+                booksRaw = await parseListWithRules(processedData, findRule.bookList, {
                     title: findRule.name,
                     author: findRule.author,
                     cover: findRule.coverUrl,
@@ -296,7 +325,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                     for (const pattern of commonPatterns) {
                         try {
                             console.log(`${logPrefix} 尝试使用模式: ${pattern}`);
-                            const testResult = parseListWithRules(processedData, pattern, {
+                            const testResult = await parseListWithRules(processedData, pattern, {
                                 title: findRule.name || 'text',
                                 author: findRule.author || 'text',
                                 cover: findRule.coverUrl || 'img@src',
@@ -322,10 +351,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 
                 // 备用解析：尝试提取所有链接作为书籍
                 try {
-                    booksRaw = parseListWithRules(processedData, 'a', {
+                    booksRaw = (await parseListWithRules(processedData, 'a', {
                         title: 'text',
                         detailUrl: '@href'
-                    }, baseUrl).filter(book => book.title && book.title.length > 2);
+                    }, baseUrl)).filter(book => book.title && book.title.length > 2);
                     console.log(`${logPrefix} 备用解析得到 ${booksRaw.length} 个链接`);
                 } catch (e) {
                     console.error(`${logPrefix} 备用解析也失败:`, e);
@@ -339,6 +368,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             })));
 
             console.log(`${logPrefix} Found ${books.length} books from category URL.`);
+            if (books.length > 0) {
+                console.log(`${logPrefix} 前3本书的数据示例:`, JSON.stringify(books.slice(0, 3).map(b => ({
+                    title: b.title,
+                    author: b.author,
+                    detailUrl: b.detailUrl,
+                    cover: b.cover?.substring(0, 50)
+                })), null, 2));
+            }
             res.status(200).json({ success: true, books });
         }
 
